@@ -528,7 +528,6 @@ def main():
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
     if training_args.do_train:
-        print(lm_datasets)
         if "train" not in lm_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]
