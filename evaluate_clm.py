@@ -589,7 +589,7 @@ def main():
                 outputs = model(**batch)
 
             loss = outputs.loss
-            loss_ = loss.repeat(data_args.per_device_eval_batch_size)
+            loss_ = loss.repeat(training_args.per_device_eval_batch_size)
             losses.append(loss_)
 
             # compute inf norms
