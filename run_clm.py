@@ -54,6 +54,7 @@ from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
+from models.opt_attention import OPTAttentionWithExtras
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -154,6 +155,14 @@ class ModelArguments:
             "help": (
                 "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
                 "set True will benefit LLM loading time and RAM consumption."
+            )
+        },
+    )
+    alpha: float = field(
+        default=None,
+        metadata={
+            "help": (
+                "If specified, use clipped softmax gamma = -alpha / seq_length."
             )
         },
     )
@@ -356,6 +365,21 @@ def main():
         n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
+    # replace self-attention module with ours
+    # NOTE: currently assumes OPT
+    for layer_idx in range(len(model.model.decoder.layers)):
+        old_attn = model.model.decoder.layers[layer_idx].self_attn
+        model.model.decoder.layers[layer_idx].self_attn = OPTAttentionWithExtras(
+            embed_dim=old_attn.embed_dim,
+            num_heads=old_attn.num_heads,
+            dropout=old_attn.dropout,
+            is_decoder=old_attn.is_decoder,
+            bias=True,
+            # new
+            alpha=model_args.alpha,
+            max_seq_length=data_args.block_size,
+        )
+
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
     embedding_size = model.get_input_embeddings().weight.shape[0]
@@ -380,11 +404,6 @@ def main():
             raw_datasets = DatasetDict()
             raw_datasets["train"] = concatenate_datasets([bookcorpus, wiki_train])
             raw_datasets["validation"] = wiki_eval
-            """
-            raw_datasets = DatasetDict()
-            raw_datasets["train"] = load_dataset("bookcorpus", split="train").select(range(1000))
-            raw_datasets["validation"] = load_dataset("wiki40b", "en", split="validation").select(range(1000))
-            """
         else:
             raw_datasets = load_dataset(
                 data_args.dataset_name,
