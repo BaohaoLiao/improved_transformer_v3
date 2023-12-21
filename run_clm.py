@@ -509,7 +509,7 @@ def main():
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
     if training_args.do_train:
-        if "train" not in tokenized_datasets:
+        if "train" not in lm_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]
         if data_args.max_train_samples is not None:
@@ -517,7 +517,7 @@ def main():
             train_dataset = train_dataset.select(range(max_train_samples))
 
     if training_args.do_eval:
-        if "validation" not in tokenized_datasets:
+        if "validation" not in lm_datasets:
             raise ValueError("--do_eval requires a validation dataset")
         eval_dataset = lm_datasets["validation"]
         if data_args.max_eval_samples is not None:
