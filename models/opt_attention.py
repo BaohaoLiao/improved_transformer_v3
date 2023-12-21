@@ -2,6 +2,7 @@
 # https://github.com/Qualcomm-AI-research/outlier-free-transformers/transformers_language/models/opt_attention.py
 from functools import partial
 from typing import Optional, Tuple
+import numpy as np
 import torch
 from torch import nn
 
@@ -9,6 +10,22 @@ from torch import nn
 def clipped_softmax(data, dim=1, eta=1.1, gamma=-0.1, **kw):
     sm_out = nn.functional.softmax(data, dim=dim, **kw)
     stretched_out = sm_out * (eta - gamma) + gamma
+    return torch.clip(stretched_out, 0, 1)
+
+def normalized_clipped_softmax(data, src_len: int, dim=1, eta=1.03, beta=1.0, **kw):
+    factor = np.ones(src_len)
+    shift = np.zeros(src_len)
+    for t in range(1, src_len, 1):
+        factor[t] = ((t + 1) * eta - beta) / t
+        shift[t] = (beta - eta) / t
+
+    sm_out = nn.functional.softmax(data, dim=dim, **kw)
+    mask = sm_out > 1e-8
+
+    factor = torch.from_numpy(factor).to(sm_out.dtype).to(sm_out.device).unsqueeze(0).unsqueeze(-1)
+    shift = torch.from_numpy(shift).to(sm_out.dtype).to(sm_out.device).unsqueeze(0).unsqueeze(-1)
+
+    stretched_out = (sm_out * factor + shift) * mask
     return torch.clip(stretched_out, 0, 1)
 
 
@@ -20,9 +37,12 @@ class OPTAttentionWithExtras(nn.Module):
         dropout: float = 0.0,
         is_decoder: bool = False,
         bias: bool = True,
-        ## new
+        ## from YB
         alpha=None,
         max_seq_length=None,
+        ## new
+        eta=None,
+        beta=1.0,
     ):
         super().__init__()
         self.embed_dim = embed_dim
@@ -53,6 +73,8 @@ class OPTAttentionWithExtras(nn.Module):
             assert max_seq_length is not None
             gamma = -alpha / max_seq_length
             self.softmax_fn = partial(clipped_softmax, gamma=gamma, eta=1.0)
+        elif eta is not None:
+            self.softmax_fn = partial(normalized_clipped_softmax, eta=eta, beta=beta)
         else:
             self.softmax_fn = nn.functional.softmax
 

@@ -160,11 +160,15 @@ class ModelArguments:
     )
     alpha: float = field(
         default=None,
-        metadata={
-            "help": (
-                "If specified, use clipped softmax gamma = -alpha / seq_length."
-            )
-        },
+        metadata={"help": ("If specified, use clipped softmax gamma = -alpha / seq_length.")},
+    )
+    eta: float = field(
+        default=None,
+        metadata={"help": ("If specified, use normalized clipped softmax.")},
+    )
+    beta: float = field(
+        default=1.0,
+        metadata={"help": ("Normalized constant for the clipped softmax.")},
     )
 
     def __post_init__(self):
@@ -375,9 +379,12 @@ def main():
             dropout=old_attn.dropout,
             is_decoder=old_attn.is_decoder,
             bias=True,
-            # new
+            # YB
             alpha=model_args.alpha,
             max_seq_length=data_args.block_size,
+            # Baohao
+            eta=model_args.eta,
+            beta=model_args.beta
         )
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
