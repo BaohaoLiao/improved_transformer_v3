@@ -363,7 +363,7 @@ def main():
         model.resize_token_embeddings(len(tokenizer))
 
     # Get the datasets
-    tokenized_book_wiki_path = (Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
+    tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}"
     if data_args.dataset_name == "wiki+book" and tokenized_book_wiki_path.exists():
         logger.info(f"Loading tokenized dataset from {str(tokenized_book_wiki_path)}")
         lm_datasets = load_from_disk(str(tokenized_book_wiki_path))
