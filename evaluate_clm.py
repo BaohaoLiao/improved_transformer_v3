@@ -543,7 +543,7 @@ def main():
         eval_dataloader = DataLoader(
             eval_dataset,
             collate_fn=default_data_collator,
-            batch_size=data_args.per_device_eval_batch_size,
+            batch_size=training_args.per_device_eval_batch_size,
             num_workers=data_args.preprocessing_num_workers,
         )
 
