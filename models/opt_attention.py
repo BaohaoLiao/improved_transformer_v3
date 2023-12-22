@@ -26,8 +26,6 @@ def normalized_clipped_softmax(data, src_len: int, dim=1, eta=1.03, beta=1.0, **
     shift = torch.from_numpy(shift).to(sm_out.dtype).to(sm_out.device).unsqueeze(0).unsqueeze(-1)
 
     stretched_out = (sm_out * factor + shift) * mask
-    print(stretched_out.size())
-    print(stretched_out)
     return torch.clip(stretched_out, 0, 1)
 
 
