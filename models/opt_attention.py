@@ -71,6 +71,7 @@ class OPTAttentionWithExtras(nn.Module):
         self.attn_probs_after_dropout = nn.Identity()
 
         # define softmax function
+        self.eta = eta
         if alpha is not None:
             assert max_seq_length is not None
             gamma = -alpha / max_seq_length
@@ -162,9 +163,19 @@ class OPTAttentionWithExtras(nn.Module):
 
         # upcast to fp32 if the weights are in fp16. Please see https://github.com/huggingface/transformers/pull/17437
         if attn_weights.dtype == torch.float16:
-            attn_weights = self.softmax_fn(attn_weights, dim=-1, dtype=torch.float32).to(torch.float16)
+            if self.eta is not None:
+                assert tgt_len == src_len
+                attn_weights = self.softmax_fn(
+                    attn_weights, src_len=src_len, dim=-1, dtype=torch.float32
+                ).to(torch.float16)
+            else:
+                attn_weights = self.softmax_fn(attn_weights, dim=-1, dtype=torch.float32).to(torch.float16)
         else:
-            attn_weights = self.softmax_fn(attn_weights, dim=-1)
+            if self.eta is not None:
+                assert tgt_len == src_len
+                attn_weights = self.softmax_fn(attn_weights, src_len=src_len, dim=-1)
+            else:
+                attn_weights = self.softmax_fn(attn_weights, dim=-1)
 
         if layer_head_mask is not None:
             if layer_head_mask.size() != (self.num_heads,):
