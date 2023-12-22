@@ -371,6 +371,7 @@ def main():
 
     # replace self-attention module with ours
     # NOTE: currently assumes OPT
+    logger.info(f"Attention parameters, alpha: {model_args.alpha}, eta: {model_args.eta}, beta: {model_args.beta}")
     for layer_idx in range(len(model.model.decoder.layers)):
         old_attn = model.model.decoder.layers[layer_idx].self_attn
         model.model.decoder.layers[layer_idx].self_attn = OPTAttentionWithExtras(
