@@ -201,11 +201,10 @@ def main():
 
     # replace self-attention module with ours
     # NOTE: currently assumes OPT
-    """
     logger.info(f"Attention parameters, alpha: {model_args.alpha}, eta: {model_args.eta}, beta: {model_args.beta}")
     for layer_idx in range(len(model.model.decoder.layers)):
         old_attn = model.model.decoder.layers[layer_idx].self_attn
-        model.model.decoder.layers[layer_idx].self_attn = OPTAttentionWithExtras(
+        new_attn = OPTAttentionWithExtras(
             embed_dim=old_attn.embed_dim,
             num_heads=old_attn.num_heads,
             dropout=old_attn.dropout,
@@ -218,7 +217,9 @@ def main():
             eta=model_args.eta,
             beta=model_args.beta
         )
-    """
+        # copy loaded weights
+        new_attn.load_state_dict(old_attn.state_dict(), strict=False)
+        model.model.decoder.layers[layer_idx].self_attn = new_attn
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
