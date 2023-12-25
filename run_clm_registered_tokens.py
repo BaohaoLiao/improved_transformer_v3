@@ -393,7 +393,7 @@ def main():
             )
     else:
         if model_args.num_registered_tokens > 0:
-            model = OPTForCausalLMWithExtras.from_config(config, trust_remote_code=model_args.trust_remote_code)
+            model = OPTForCausalLMWithExtras(config)
         else:
             model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
         logger.info(model)
