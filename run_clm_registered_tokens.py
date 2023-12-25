@@ -352,6 +352,7 @@ def main():
         )
 
     if model_args.num_registered_tokens > 0:
+        logger.info(f"Vocabulary size before adding registered tokens: {len(tokenizer.vocab)}")
         new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
         assert len(set(new_tokens) - set(tokenizer.vocab.keys())) == model_args.num_registered_tokens
         tokenizer.add_tokens(new_tokens)
@@ -360,6 +361,8 @@ def main():
             registered_tokens[k] = v[1:] # delete BOS
         registered_tokens["labels"] = registered_tokens["input_ids"].copy()
         config.num_registered_tokens = model_args.num_registered_tokens
+        logger.info(f"Added registered tokens: {new_tokens}")
+        logger.info(f"Vocabulary size after adding registered tokens: {len(tokenizer.vocab)}")
 
     if model_args.model_name_or_path:
         torch_dtype = (
@@ -582,7 +585,7 @@ def main():
                     add_registered_tokens,
                     batched=True,
                     num_proc=data_args.preprocessing_num_workers,
-                    load_from_cache_file=not data_args.overwrite_cache,
+                    load_from_cache_file=False,
                     desc=f"Adding registered tokens",
                 )
             else:
