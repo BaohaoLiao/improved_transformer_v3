@@ -14,7 +14,6 @@ class OPTForCausalLMWithExtras(OPTForCausalLM):
         super().__init__(config)
         self.num_registered_tokens = config.num_registered_tokens
 
-    @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids: torch.LongTensor = None,
