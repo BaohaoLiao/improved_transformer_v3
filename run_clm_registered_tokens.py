@@ -399,9 +399,6 @@ def main():
             model = OPTForCausalLMWithExtras(config)
         else:
             model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
-        logger.info(model)
-        n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
-        logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
     # replace self-attention module with ours
     # NOTE: currently assumes OPT
@@ -427,6 +424,10 @@ def main():
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
+
+    logger.info(model)
+    n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
+    logger.info(f"Training new model from scratch - Total size={n_params / 2 ** 20:.2f}M params")
 
     # Get the datasets
     tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}"
