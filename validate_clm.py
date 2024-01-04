@@ -34,6 +34,8 @@ from collections import OrderedDict
 from tqdm import tqdm
 import numpy as np
 from pprint import pformat
+from typing import Optional
+from dataclasses import dataclass, field
 
 import datasets
 import evaluate
@@ -81,29 +83,57 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Validate a transformers model on a " "MLM/CLM task")
-    ## Quantization
-    parser.add_argument("--quantize", action="store_true")
-    parser.add_argument("--est_num_batches", type=int, default=1)
-    parser.add_argument("--n_bits", type=int, default=8)
-    parser.add_argument("--n_bits_act", type=int, default=8)
-    parser.add_argument("--no_weight_quant", action="store_true")
-    parser.add_argument("--no_act_quant", action="store_true")
-    parser.add_argument("--qmethod_acts", type=str, default="asymmetric_uniform")
-    parser.add_argument("--ranges_weights", type=str, default="minmax")
-    parser.add_argument("--ranges_acts", type=str, default="running_minmax")
-    parser.add_argument("--percentile", type=float, default=None, help="Percentile (in %) for range estimation.")
-    parser.add_argument("--quant_setup", type=str, default="all")
-    args = parser.parse_args()
-    return args
+@dataclass
+class NewTrainingArguments(TrainingArguments):
+    quantize: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Quantization for evaluation"},
+    )
+    est_num_batches: Optional[int] = field(
+        default=1,
+        metadata={"help": "Number of batch for calibration"},
+    )
+    n_bits: Optional[int] = field(
+        default=8,
+        metadata={"help": "n-bit for quantization"},
+    )
+    n_bits_act: Optional[int] = field(
+        default=8,
+        metadata={"help": "n-bit for acttivation"},
+    )
+    no_weight_quant: Optional[bool] = field(
+        default=False,
+        metadata={"help": "No quantization for weight"},
+    )
+    no_act_quant: Optional[bool] = field(
+        default=False,
+        metadata={"help": "No quantization for activation"},
+    )
+    qmethod_acts: Optional[str] = field(
+        default="asymmetric_uniform",
+        metadata={"help": "Asymmetric uniform"},
+    )
+    ranges_weights: Optional[str] = field(
+        default="minmax",
+        metadata={"help": "Minmax for weights"},
+    )
+    ranges_acts: Optional[str] = field(
+        default="running_minmax",
+        metadata={"help": "Running minmax for activation"},
+    )
+    percentile: Optional[float] = field(
+        default=None,
+        metadata={"help": "Percentile (in %) for range estimation"},
+    )
+    quant_setup: Optional[str] = field(
+        default="all",
+        metadata={"help": ""},
+    )
+    def __post_init__(self):
+        super().__post_init__()
 
 def main():
-    args = parse_args()
-    logger.info(f"Quntization arguments: {args}")
-
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, NewTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
@@ -117,7 +147,7 @@ def main():
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_clm", model_args, data_args)
+    send_example_telemetry("run_clm", model_args, data_args, training_args)
 
     # Setup logging
     logging.basicConfig(
@@ -404,17 +434,17 @@ def main():
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
 
-    if args.quantize:
+    if training_args.quantize:
         click_config = get_quant_config()
 
         # override number of batches
-        click_config.act_quant.num_batches = args.est_num_batches
-        click_config.quant.n_bits = args.n_bits
-        click_config.quant.n_bits_act = args.n_bits_act
-        click_config.quant.quant_setup = args.quant_setup
-        if args.no_weight_quant:
+        click_config.act_quant.num_batches = training_args.est_num_batches
+        click_config.quant.n_bits = training_args.n_bits
+        click_config.quant.n_bits_act = training_args.n_bits_act
+        click_config.quant.quant_setup = training_args.quant_setup
+        if training_args.no_weight_quant:
             click_config.quant.weight_quant = False
-        if args.no_act_quant:
+        if training_args.no_act_quant:
             click_config.quant.act_quant = False
 
         # use MSE for weights (ignore `args.ranges_weights`)
@@ -423,39 +453,39 @@ def main():
         click_config.quant.weight_opt_method = OptMethod.grid
 
         # qmethod acts
-        if args.qmethod_acts == "symmetric_uniform":
+        if training_args.qmethod_acts == "symmetric_uniform":
             click_config.quant.qmethod_act = QMethods.symmetric_uniform
-        elif args.qmethod_acts == "asymmetric_uniform":
+        elif training_args.qmethod_acts == "asymmetric_uniform":
             click_config.quant.qmethod_act = QMethods.asymmetric_uniform
         else:
-            raise NotImplementedError(f"Unknown qmethod_act setting, '{args.qmethod_acts}'")
+            raise NotImplementedError(f"Unknown qmethod_act setting, '{training_args.qmethod_acts}'")
 
         # Acts ranges
-        if args.percentile is not None:
-            click_config.act_quant.options["percentile"] = args.percentile
+        if training_args.percentile is not None:
+            click_config.act_quant.options["percentile"] = training_args.percentile
 
-        if args.ranges_acts == "running_minmax":
+        if training_args.ranges_acts == "running_minmax":
             click_config.act_quant.quant_method = RangeEstimators.running_minmax
 
-        elif args.ranges_acts == "MSE":
+        elif training_args.ranges_acts == "MSE":
             click_config.act_quant.quant_method = RangeEstimators.MSE
-            if args.qmethod_acts == "symmetric_uniform":
+            if training_args.qmethod_acts == "symmetric_uniform":
                 click_config.act_quant.options = dict(opt_method=OptMethod.grid)
-            elif args.qmethod_acts == "asymmetric_uniform":
+            elif training_args.qmethod_acts == "asymmetric_uniform":
                 click_config.act_quant.options = dict(opt_method=OptMethod.golden_section)
 
-        elif args.ranges_acts.startswith("L"):
+        elif training_args.ranges_acts.startswith("L"):
             click_config.act_quant.quant_method = RangeEstimators.Lp
-            p_norm = float(args.ranges_acts.replace("L", ""))
+            p_norm = float(training_args.ranges_acts.replace("L", ""))
             options = dict(p_norm=p_norm)
-            if args.qmethod_acts == "symmetric_uniform":
+            if training_args.qmethod_acts == "symmetric_uniform":
                 options["opt_method"] = OptMethod.grid
-            elif args.qmethod_acts == "asymmetric_uniform":
+            elif training_args.qmethod_acts == "asymmetric_uniform":
                 options["opt_method"] = OptMethod.golden_section
             click_config.act_quant.options = options
 
         else:
-            raise NotImplementedError(f"Unknown range estimation setting, '{args.ranges_acts}'")
+            raise NotImplementedError(f"Unknown range estimation setting, '{training_args.ranges_acts}'")
 
         qparams = val_qparams(click_config)
         qparams["quant_dict"] = {}
