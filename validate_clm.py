@@ -596,26 +596,27 @@ def main():
             losses.append(loss_)
 
             # compute inf norms
-            for name in ACT_KEYS:
-                if name in act_dict:
-                    x_inp, x_out = act_dict[name]
-                    x = x_out
-                    x = x.view(x.size(0), -1)
+            if not training_args.quantize:
+                for name in ACT_KEYS:
+                    if name in act_dict:
+                        x_inp, x_out = act_dict[name]
+                        x = x_out
+                        x = x.view(x.size(0), -1)
 
-                    # compute inf norm
-                    inf_norms = x.norm(dim=1, p=np.inf)
-                    if not name in act_inf_norms:
-                        act_inf_norms[name] = AverageMeter()
-                    for v in inf_norms:
-                        act_inf_norms[name].update(v.item())
+                        # compute inf norm
+                        inf_norms = x.norm(dim=1, p=np.inf)
+                        if not name in act_inf_norms:
+                            act_inf_norms[name] = AverageMeter()
+                        for v in inf_norms:
+                            act_inf_norms[name].update(v.item())
 
-                    # compute kurtosis
-                    if batch_idx <= 100:
-                        kurt = kurtosis(x)
-                        if not name in act_kurtoses:
-                            act_kurtoses[name] = AverageMeter()
-                        for v in kurt:
-                            act_kurtoses[name].update(v.item())
+                        # compute kurtosis
+                        if batch_idx <= 100:
+                            kurt = kurtosis(x)
+                            if not name in act_kurtoses:
+                                act_kurtoses[name] = AverageMeter()
+                            for v in kurt:
+                                act_kurtoses[name].update(v.item())
 
         losses = torch.cat(losses)
         try:
@@ -628,38 +629,39 @@ def main():
         # metrics
         metrics = OrderedDict([("perplexity", perplexity)])
 
-        for name, v in act_inf_norms.items():
-            metrics[name] = v.avg
+        if not training_args.quantize:
+            for name, v in act_inf_norms.items():
+                metrics[name] = v.avg
 
-        max_inf_norm = max(v.avg for v in act_inf_norms.values())
-        max_ffn_inf_norm = max(v.avg for k, v in act_inf_norms.items() if ".fc" in k)
-        max_layer_inf_norm = max(
-            act_inf_norms[f"model.decoder.layers.{j}"].avg for j in range(num_layers)
-        )
+            max_inf_norm = max(v.avg for v in act_inf_norms.values())
+            max_ffn_inf_norm = max(v.avg for k, v in act_inf_norms.items() if ".fc" in k)
+            max_layer_inf_norm = max(
+                act_inf_norms[f"model.decoder.layers.{j}"].avg for j in range(num_layers)
+            )
 
-        avg_kurtosis = sum(v.avg for v in act_kurtoses.values()) / len(act_kurtoses.values())
-        max_kurtosis = max(v.avg for v in act_kurtoses.values())
-        max_kurtosis_layers = max(
-            act_kurtoses[f"model.decoder.layers.{j}"].avg for j in range(num_layers)
-        )
+            avg_kurtosis = sum(v.avg for v in act_kurtoses.values()) / len(act_kurtoses.values())
+            max_kurtosis = max(v.avg for v in act_kurtoses.values())
+            max_kurtosis_layers = max(
+                act_kurtoses[f"model.decoder.layers.{j}"].avg for j in range(num_layers)
+            )
 
-        metrics["max_inf_norm"] = max_inf_norm
-        metrics["max_ffn_inf_norm"] = max_ffn_inf_norm
-        metrics["max_layer_inf_norm"] = max_layer_inf_norm
+            metrics["max_inf_norm"] = max_inf_norm
+            metrics["max_ffn_inf_norm"] = max_ffn_inf_norm
+            metrics["max_layer_inf_norm"] = max_layer_inf_norm
 
-        metrics["avg_kurtosis"] = avg_kurtosis
-        metrics["max_kurtosis"] = max_kurtosis
-        metrics["max_kurtosis_layers"] = max_kurtosis_layers
+            metrics["avg_kurtosis"] = avg_kurtosis
+            metrics["max_kurtosis"] = max_kurtosis
+            metrics["max_kurtosis_layers"] = max_kurtosis_layers
 
-        logger.info(f"Max inf norm: {max_inf_norm:.1f}")
-        logger.info(f"Max FFN inf norm: {max_ffn_inf_norm:.1f}")
-        logger.info(f"Max layer inf norm: {max_layer_inf_norm:.1f}")
+            logger.info(f"Max inf norm: {max_inf_norm:.1f}")
+            logger.info(f"Max FFN inf norm: {max_ffn_inf_norm:.1f}")
+            logger.info(f"Max layer inf norm: {max_layer_inf_norm:.1f}")
 
-        logger.info(f"Avg Kurtosis: {avg_kurtosis:.2f}")
-        logger.info(f"Max Kurtosis: {max_kurtosis:.1f}")
-        logger.info(f"Max Kurtosis layers: {max_kurtosis_layers:.1f}")
+            logger.info(f"Avg Kurtosis: {avg_kurtosis:.2f}")
+            logger.info(f"Max Kurtosis: {max_kurtosis:.1f}")
+            logger.info(f"Max Kurtosis layers: {max_kurtosis_layers:.1f}")
 
-        logger.info(f"\nAll metrics:\n{pformat(metrics)}")
+            logger.info(f"\nAll metrics:\n{pformat(metrics)}")
 
         if training_args.output_dir is not None:
             os.makedirs(training_args.output_dir, exist_ok=True)
