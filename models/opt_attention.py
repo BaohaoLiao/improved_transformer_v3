@@ -8,7 +8,6 @@ from torch import nn
 
 
 def clipped_softmax(data, dim=1, eta=1.1, gamma=-0.1, **kw):
-    print("???????????")
     sm_out = nn.functional.softmax(data, dim=dim, **kw)
     stretched_out = sm_out * (eta - gamma) + gamma
     return torch.clip(stretched_out, 0, 1)
