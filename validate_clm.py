@@ -496,7 +496,6 @@ def main():
 
         # Range estimation
         logger.info("** Estimate quantization ranges on training data **")
-        logger.info(lm_datasets)
         train_dataset = concatenate_datasets([lm_datasets["train_book"], lm_datasets["train_wiki"]])
         train_dataloader = DataLoader(
             train_dataset,
