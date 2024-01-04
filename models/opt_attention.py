@@ -13,7 +13,6 @@ def clipped_softmax(data, dim=1, eta=1.1, gamma=-0.1, **kw):
     return torch.clip(stretched_out, 0, 1)
 
 def normalized_clipped_softmax(data, src_len: int, dim=1, eta=1.03, beta=1.0, **kw):
-    print("!!!!!!!!!!!!")
     factor = np.ones(src_len)
     shift = np.zeros(src_len)
     for t in range(1, src_len, 1):
