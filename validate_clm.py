@@ -27,6 +27,7 @@ import os
 import sys
 import json
 import warnings
+import argparse
 from itertools import chain
 from pathlib import Path
 from collections import OrderedDict
@@ -60,9 +61,13 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
-from utils import kurtosis
 from run_clm import ModelArguments, DataTrainingArguments
 from models.opt_attention import OPTAttentionWithExtras
+from models.quantized_opt import QuantizedOPTForCausalLM
+from models.quant_configs import get_quant_config
+from utils import kurtosis, count_params, pass_data_for_range_estimation, val_qparams
+from quantization.range_estimators import OptMethod, RangeEstimators
+from quantization.quantizers import QMethods
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -77,7 +82,27 @@ MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Validate a transformers model on a " "MLM/CLM task")
+    ## Quantization
+    parser.add_argument("--quantize", action="store_true")
+    parser.add_argument("--est_num_batches", type=int, default=1)
+    parser.add_argument("--n_bits", type=int, default=8)
+    parser.add_argument("--n_bits_act", type=int, default=8)
+    parser.add_argument("--no_weight_quant", action="store_true")
+    parser.add_argument("--no_act_quant", action="store_true")
+    parser.add_argument("--qmethod_acts", type=str, default="asymmetric_uniform")
+    parser.add_argument("--ranges_weights", type=str, default="minmax")
+    parser.add_argument("--ranges_acts", type=str, default="running_minmax")
+    parser.add_argument("--percentile", type=float, default=None, help="Percentile (in %) for range estimation.")
+    parser.add_argument("--quant_setup", type=str, default="all")
+    args = parser.parse_args()
+    return args
+
 def main():
+    args = parse_args()
+    logger.info(f"Quntization arguments: {args}")
+
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
@@ -221,11 +246,21 @@ def main():
         new_attn.load_state_dict(old_attn.state_dict(), strict=False)
         model.model.decoder.layers[layer_idx].self_attn = new_attn
 
-    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
-    # on a small vocab and want a smaller embedding size, remove this test.
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
+    logger.info("FP Model:")
+    logger.info(model)
+
+    # Display num params
+    n_embeddings = count_params(model.model.decoder.embed_tokens) + count_params(model.model.decoder.embed_positions)
+    n_decoder = count_params(model.model.decoder) - n_embeddings
+    n_head = count_params(model.lm_head)
+    logger.info(
+        f"\nNumber of parameters:\n"
+        f"\t* Embeddings:\t{n_embeddings}\n"
+        f"\t* Decoder:\t{n_decoder}\n"
+        f"\t* Head:\t{n_head}\n"
+        f"\t= Total (pre-training):\t{n_embeddings + n_decoder + n_head}\n"
+        f"\t= Total (decoder only):\t{n_embeddings + n_decoder}\n"
+    )
 
     # Get the datasets
     tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}"
@@ -367,6 +402,88 @@ def main():
         # Save tokenized dataset for saving time if re-running
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
+
+
+    if args.quantize:
+        click_config = get_quant_config()
+
+        # override number of batches
+        click_config.act_quant.num_batches = args.est_num_batches
+        click_config.quant.n_bits = args.n_bits
+        click_config.quant.n_bits_act = args.n_bits_act
+        click_config.quant.quant_setup = args.quant_setup
+        if args.no_weight_quant:
+            click_config.quant.weight_quant = False
+        if args.no_act_quant:
+            click_config.quant.act_quant = False
+
+        # use MSE for weights (ignore `args.ranges_weights`)
+        # click_config.quant.weight_quant_method = RangeEstimators.current_minmax
+        click_config.quant.weight_quant_method = RangeEstimators.MSE
+        click_config.quant.weight_opt_method = OptMethod.grid
+
+        # qmethod acts
+        if args.qmethod_acts == "symmetric_uniform":
+            click_config.quant.qmethod_act = QMethods.symmetric_uniform
+        elif args.qmethod_acts == "asymmetric_uniform":
+            click_config.quant.qmethod_act = QMethods.asymmetric_uniform
+        else:
+            raise NotImplementedError(f"Unknown qmethod_act setting, '{args.qmethod_acts}'")
+
+        # Acts ranges
+        if args.percentile is not None:
+            click_config.act_quant.options["percentile"] = args.percentile
+
+        if args.ranges_acts == "running_minmax":
+            click_config.act_quant.quant_method = RangeEstimators.running_minmax
+
+        elif args.ranges_acts == "MSE":
+            click_config.act_quant.quant_method = RangeEstimators.MSE
+            if args.qmethod_acts == "symmetric_uniform":
+                click_config.act_quant.options = dict(opt_method=OptMethod.grid)
+            elif args.qmethod_acts == "asymmetric_uniform":
+                click_config.act_quant.options = dict(opt_method=OptMethod.golden_section)
+
+        elif args.ranges_acts.startswith("L"):
+            click_config.act_quant.quant_method = RangeEstimators.Lp
+            p_norm = float(args.ranges_acts.replace("L", ""))
+            options = dict(p_norm=p_norm)
+            if args.qmethod_acts == "symmetric_uniform":
+                options["opt_method"] = OptMethod.grid
+            elif args.qmethod_acts == "asymmetric_uniform":
+                options["opt_method"] = OptMethod.golden_section
+            click_config.act_quant.options = options
+
+        else:
+            raise NotImplementedError(f"Unknown range estimation setting, '{args.ranges_acts}'")
+
+        qparams = val_qparams(click_config)
+        qparams["quant_dict"] = {}
+        model = QuantizedOPTForCausalLM(model, **qparams)
+        model.set_quant_state(weight_quant=click_config.quant.weight_quant, act_quant=click_config.quant.act_quant)
+        logger.info("Quantized model:")
+        logger.info(model)
+
+        # Range estimation
+        logger.info("** Estimate quantization ranges on training data **")
+        train_dataset = lm_datasets["train"]
+        train_dataloader = DataLoader(
+            train_dataset,
+            shuffle=True,
+            collate_fn=default_data_collator,
+            batch_size=args.per_device_train_batch_size,
+            num_workers=args.preprocessing_num_workers,
+        )
+
+        pass_data_for_range_estimation(
+            loader=train_dataloader,
+            model=model,
+            act_quant=click_config.quant.act_quant,
+            max_num_batches=click_config.act_quant.num_batches,
+        )
+        model.fix_ranges()
+        model.set_quant_state(weight_quant=click_config.quant.weight_quant, act_quant=click_config.quant.act_quant)
+
 
     if training_args.do_eval:
         if "validation" not in lm_datasets:
@@ -518,11 +635,6 @@ def main():
             os.makedirs(training_args.output_dir, exist_ok=True)
             with open(os.path.join(training_args.output_dir, "all_results.json"), "w") as f:
                 json.dump(metrics, f)
-
-
-def _mp_fn(index):
-    # For xla_spawn (TPUs)
-    main()
 
 
 if __name__ == "__main__":
