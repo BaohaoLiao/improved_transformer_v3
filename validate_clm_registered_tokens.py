@@ -436,6 +436,9 @@ def main():
         logger.info(f"Adding registered tokens ...")
         new_tokens = [f"<s{i}>" for i in range(config.num_registered_tokens)]
         registered_tokens = tokenizer("".join(new_tokens))
+        for k, v in registered_tokens.items():
+            registered_tokens[k] = v[1:]  # delete BOS
+        registered_tokens["labels"] = registered_tokens["input_ids"].copy()
 
         def add_registered_tokens(examples):
             result = {}
