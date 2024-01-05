@@ -580,16 +580,12 @@ def main():
 
     if model_args.num_registered_tokens > 0:
         def add_registered_tokens(examples):
-            print("before", examples)
             result = {}
             for k, examples in examples.items():
-                print(k)
                 new_examples = []
                 for example in examples:
                     new_examples.append(registered_tokens[k] + example)
-                    print(len(example), len(registered_tokens[k] + example))
                 result[k] = new_examples
-            print("after", result)
             return result
 
         with training_args.main_process_first(desc="adding registered tokens"):
@@ -597,7 +593,6 @@ def main():
                 lm_datasets = lm_datasets.map(
                     add_registered_tokens,
                     batched=True,
-                    batch_size=1,
                     num_proc=data_args.preprocessing_num_workers,
                     load_from_cache_file=False,
                     desc=f"Adding registered tokens",
