@@ -439,7 +439,7 @@ def main():
 
         def add_registered_tokens(examples):
             result = {}
-            print(examples)
+            print(examples.keys())
             for k, examples in examples.items():
                 new_examples = []
                 for example in examples:
