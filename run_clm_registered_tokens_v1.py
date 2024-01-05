@@ -583,7 +583,6 @@ def main():
                 lm_datasets = lm_datasets.map(
                     add_registered_tokens,
                     batched=True,
-                    batch_size=1,
                     num_proc=data_args.preprocessing_num_workers,
                     load_from_cache_file=False,
                     desc=f"Adding registered tokens",
