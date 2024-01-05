@@ -64,7 +64,7 @@ from transformers.utils.versions import require_version
 
 from run_clm_registered_tokens import ModelArguments, DataTrainingArguments
 from models.opt_attention import OPTAttentionWithExtras
-from models.quantized_opt_for_causal_lm import QuantizedOPTForCausalLM
+from models.quantized_opt import QuantizedOPTForCausalLM
 from models.quant_configs import get_quant_config
 from utils import kurtosis, count_params, pass_data_for_range_estimation, val_qparams
 from quantization.range_estimators import OptMethod, RangeEstimators
