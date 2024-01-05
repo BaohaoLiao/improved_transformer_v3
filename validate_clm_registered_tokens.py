@@ -453,7 +453,7 @@ def main():
 
         with training_args.main_process_first(desc="adding registered tokens"):
             if not data_args.streaming:
-                lm_datasets["validation"] = lm_datasets["validation"].map(
+                lm_datasets = lm_datasets.map(
                     add_registered_tokens,
                     batched=True,
                     num_proc=data_args.preprocessing_num_workers,
