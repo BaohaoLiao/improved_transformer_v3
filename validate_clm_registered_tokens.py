@@ -432,9 +432,9 @@ def main():
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
-    if model_args.num_registered_tokens > 0:
+    if config.num_registered_tokens > 0:
         logger.info(f"Adding registered tokens ...")
-        new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
+        new_tokens = [f"<s{i}>" for i in range(config.num_registered_tokens)]
         registered_tokens = tokenizer("".join(new_tokens))
 
         def add_registered_tokens(examples):
@@ -564,8 +564,8 @@ def main():
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, model_args.num_registered_tokens + 1:].reshape(-1)
-            preds = preds[:, model_args.num_registered_tokens:-1].reshape(-1)
+            labels = labels[:, config.num_registered_tokens + 1:].reshape(-1)
+            preds = preds[:, config.num_registered_tokens:-1].reshape(-1)
             return metric.compute(predictions=preds, references=labels)
 
     # Evaluation
