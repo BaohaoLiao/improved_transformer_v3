@@ -578,6 +578,8 @@ def main():
                 result[k] = new_examples
             return result
 
+        lm_datasets["train"] = lm_datasets["train"].select(range(100))
+        lm_datasets["validation"] = lm_datasets["validation"].select(range(100))
         with training_args.main_process_first(desc="adding registered tokens"):
             if not data_args.streaming:
                 lm_datasets = lm_datasets.map(
