@@ -583,6 +583,7 @@ def main():
             print("before", examples)
             result = {}
             for k, examples in examples.items():
+                print(k)
                 new_examples = []
                 for example in examples:
                     new_examples.append(registered_tokens[k] + example)
