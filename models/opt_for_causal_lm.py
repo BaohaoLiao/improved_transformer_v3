@@ -2,7 +2,6 @@ from typing import List, Optional, Tuple, Union
 import torch
 from torch.nn import CrossEntropyLoss
 
-from transformers.utils import replace_return_docstrings
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models.opt.modeling_opt import (
     OPTForCausalLM,

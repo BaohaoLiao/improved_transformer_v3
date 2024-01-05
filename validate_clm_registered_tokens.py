@@ -64,7 +64,7 @@ from transformers.utils.versions import require_version
 
 from run_clm import ModelArguments, DataTrainingArguments
 from models.opt_attention import OPTAttentionWithExtras
-from models.quantized_opt import QuantizedOPTForCausalLM
+from models.quantized_opt_for_causal_lm import QuantizedOPTForCausalLMWithExtras
 from models.quant_configs import get_quant_config
 from utils import kurtosis, count_params, pass_data_for_range_estimation, val_qparams
 from quantization.range_estimators import OptMethod, RangeEstimators
@@ -432,6 +432,34 @@ def main():
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
+    if model_args.num_registered_tokens > 0:
+        logger.info(f"Adding registered tokens ...")
+        new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
+        registered_tokens = tokenizer("".join(new_tokens))
+
+        def add_registered_tokens(examples):
+            result = {}
+            for k, examples in examples.items():
+                new_examples = []
+                for example in examples:
+                    new_examples.append(registered_tokens[k] + example)
+                result[k] = new_examples
+            return result
+
+        with training_args.main_process_first(desc="adding registered tokens"):
+            if not data_args.streaming:
+                lm_datasets = lm_datasets.map(
+                    add_registered_tokens,
+                    batched=True,
+                    num_proc=data_args.preprocessing_num_workers,
+                    load_from_cache_file=False,
+                    desc=f"Adding registered tokens",
+                )
+            else:
+                lm_datasets = lm_datasets.map(
+                    add_registered_tokens,
+                    batched=True,
+                )
 
     if training_args.quantize:
         click_config = get_quant_config()
@@ -488,7 +516,7 @@ def main():
 
         qparams = val_qparams(click_config)
         qparams["quant_dict"] = {}
-        model = QuantizedOPTForCausalLM(model, **qparams)
+        model = QuantizedOPTForCausalLMWithExtras(model, **qparams)
         model.set_quant_state(weight_quant=click_config.quant.weight_quant, act_quant=click_config.quant.act_quant)
         logger.info("Quantized model:")
         logger.info(model)
@@ -536,8 +564,8 @@ def main():
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, 1:].reshape(-1)
-            preds = preds[:, :-1].reshape(-1)
+            labels = labels[:, model_args.num_registered_tokens + 1:].reshape(-1)
+            preds = preds[:, model_args.num_registered_tokens:-1].reshape(-1)
             return metric.compute(predictions=preds, references=labels)
 
     # Evaluation
