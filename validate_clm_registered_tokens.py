@@ -440,6 +440,8 @@ def main():
             registered_tokens[k] = v[1:]  # delete BOS
         registered_tokens["labels"] = registered_tokens["input_ids"].copy()
 
+        # speed up the data processing
+        lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(10000))
         def add_registered_tokens(examples):
             result = {}
             for k, examples in examples.items():
@@ -527,7 +529,7 @@ def main():
         # Range estimation
         logger.info("** Estimate quantization ranges on training data **")
         logger.info(lm_datasets)
-        train_dataset = concatenate_datasets([lm_datasets["train_book"], lm_datasets["train_wiki"]])
+        train_dataset = lm_datasets["train"]
         train_dataloader = DataLoader(
             train_dataset,
             shuffle=True,
