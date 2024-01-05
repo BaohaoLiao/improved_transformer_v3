@@ -25,23 +25,16 @@ import logging
 import math
 import os
 import sys
-import json
 import warnings
-from itertools import chain
-from pathlib import Path
-from collections import OrderedDict
-from tqdm import tqdm
-import numpy as np
-from pprint import pformat
-from typing import Optional
 from dataclasses import dataclass, field
+from itertools import chain
+from typing import Optional
+from pathlib import Path
 
 import datasets
 import evaluate
 import torch
 from datasets import load_dataset, DatasetDict, concatenate_datasets, load_metric, load_from_disk
-from torch.utils.data import DataLoader
-from timm.utils import AverageMeter
 
 import transformers
 from transformers import (
@@ -61,14 +54,7 @@ from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-
-from run_clm_registered_tokens import ModelArguments, DataTrainingArguments
 from models.opt_attention import OPTAttentionWithExtras
-from models.quantized_opt_for_causal_lm import QuantizedOPTForCausalLMWithExtras
-from models.quant_configs import get_quant_config
-from utils import kurtosis, count_params, pass_data_for_range_estimation, val_qparams
-from quantization.range_estimators import OptMethod, RangeEstimators
-from quantization.quantizers import QMethods
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -82,57 +68,191 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
+
 @dataclass
-class NewTrainingArguments(TrainingArguments):
-    quantize: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Quantization for evaluation"},
-    )
-    est_num_batches: Optional[int] = field(
-        default=1,
-        metadata={"help": "Number of batch for calibration"},
-    )
-    n_bits: Optional[int] = field(
-        default=8,
-        metadata={"help": "n-bit for quantization"},
-    )
-    n_bits_act: Optional[int] = field(
-        default=8,
-        metadata={"help": "n-bit for acttivation"},
-    )
-    no_weight_quant: Optional[bool] = field(
-        default=False,
-        metadata={"help": "No quantization for weight"},
-    )
-    no_act_quant: Optional[bool] = field(
-        default=False,
-        metadata={"help": "No quantization for activation"},
-    )
-    qmethod_acts: Optional[str] = field(
-        default="asymmetric_uniform",
-        metadata={"help": "Asymmetric uniform"},
-    )
-    ranges_weights: Optional[str] = field(
-        default="minmax",
-        metadata={"help": "Minmax for weights"},
-    )
-    ranges_acts: Optional[str] = field(
-        default="running_minmax",
-        metadata={"help": "Running minmax for activation"},
-    )
-    percentile: Optional[float] = field(
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
+    """
+
+    model_name_or_path: Optional[str] = field(
         default=None,
-        metadata={"help": "Percentile (in %) for range estimation"},
+        metadata={
+            "help": (
+                "The model checkpoint for weights initialization. Don't set if you want to train a model from scratch."
+            )
+        },
     )
-    quant_setup: Optional[str] = field(
-        default="all",
-        metadata={"help": ""},
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "If training from scratch, pass a model type from the list: " + ", ".join(MODEL_TYPES)},
     )
+    config_overrides: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override some existing default config settings when a model is trained from scratch. Example: "
+                "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index"
+            )
+        },
+    )
+    config_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+    )
+    token: str = field(
+        default=None,
+        metadata={
+            "help": (
+                "The token to use as HTTP bearer authorization for remote files. If not specified, will use the token "
+                "generated when running `huggingface-cli login` (stored in `~/.huggingface`)."
+            )
+        },
+    )
+    use_auth_token: bool = field(
+        default=None,
+        metadata={
+            "help": "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token`."
+        },
+    )
+    trust_remote_code: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether or not to allow for custom models defined on the Hub in their own modeling files. This option"
+                "should only be set to `True` for repositories you trust and in which you have read the code, as it will"
+                "execute code present on the Hub on your local machine."
+            )
+        },
+    )
+    torch_dtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override the default `torch.dtype` and load the model under this dtype. If `auto` is passed, the "
+                "dtype will be automatically derived from the model's weights."
+            ),
+            "choices": ["auto", "bfloat16", "float16", "float32"],
+        },
+    )
+    low_cpu_mem_usage: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
+                "set True will benefit LLM loading time and RAM consumption."
+            )
+        },
+    )
+    alpha: float = field(
+        default=None,
+        metadata={"help": ("If specified, use clipped softmax gamma = -alpha / seq_length.")},
+    )
+    eta: float = field(
+        default=None,
+        metadata={"help": ("If specified, use normalized clipped softmax.")},
+    )
+    beta: float = field(
+        default=1.0,
+        metadata={"help": ("Normalized constant for the clipped softmax.")},
+    )
+    num_registered_tokens: int = field(
+        default=0,
+        metadata={"help": ("Number of registerred tokens.")},
+    )
+
     def __post_init__(self):
-        super().__post_init__()
+        if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
+            raise ValueError(
+                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+            )
+
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    dataset_name: str = field(
+        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
+    )
+    dataset_config_name: Optional[str] = field(
+        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+    )
+    data_cache_dir: Optional[str] = field(
+        default=None, metadata={"help": "Cached datasets."}
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+                "value if set."
+            )
+        },
+    )
+    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    block_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional input sequence length after tokenization. "
+                "The training dataset will be truncated in block of this size for training. "
+                "Default to the model max input length for single sentence inputs (take into account special tokens)."
+            )
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+    )
+    validation_split_percentage: Optional[int] = field(
+        default=5,
+        metadata={
+            "help": "The percentage of the train set used as validation set in case there's no validation split"
+        },
+    )
+    preprocessing_num_workers: Optional[int] = field(
+        default=None,
+        metadata={"help": "The number of processes to use for the preprocessing."},
+    )
+    keep_linebreaks: bool = field(
+        default=True, metadata={"help": "Whether to keep line breaks when using TXT files or not."}
+    )
+
+    def __post_init__(self):
+        if self.streaming:
+            require_version("datasets>=2.0.0", "The streaming feature requires `datasets>=2.0.0`")
+
+        if self.dataset_name is None :
+            raise ValueError("Need either a dataset name.")
+
 
 def main():
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, NewTrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
@@ -146,7 +266,7 @@ def main():
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_clm", model_args, data_args, training_args)
+    send_example_telemetry("run_clm", model_args, data_args)
 
     # Setup logging
     logging.basicConfig(
@@ -230,6 +350,19 @@ def main():
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
 
+    if model_args.num_registered_tokens > 0:
+        logger.info(f"Vocabulary size before adding registered tokens: {len(tokenizer.vocab)}")
+        new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
+        assert len(set(new_tokens) - set(tokenizer.vocab.keys())) == model_args.num_registered_tokens
+        tokenizer.add_tokens(new_tokens)
+        registered_tokens = tokenizer("".join(new_tokens))
+        for k, v in registered_tokens.items():
+            registered_tokens[k] = v[1:] # delete BOS
+        registered_tokens["labels"] = registered_tokens["input_ids"].copy()
+        config.num_registered_tokens = model_args.num_registered_tokens
+        logger.info(f"Added registered tokens: {new_tokens}")
+        logger.info(f"Vocabulary size after adding registered tokens: {len(tokenizer.vocab)}")
+
     if model_args.model_name_or_path:
         torch_dtype = (
             model_args.torch_dtype
@@ -249,16 +382,13 @@ def main():
         )
     else:
         model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
-        logger.info(model)
-        n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
-        logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
     # replace self-attention module with ours
     # NOTE: currently assumes OPT
     logger.info(f"Attention parameters, alpha: {model_args.alpha}, eta: {model_args.eta}, beta: {model_args.beta}")
     for layer_idx in range(len(model.model.decoder.layers)):
         old_attn = model.model.decoder.layers[layer_idx].self_attn
-        new_attn = OPTAttentionWithExtras(
+        model.model.decoder.layers[layer_idx].self_attn = OPTAttentionWithExtras(
             embed_dim=old_attn.embed_dim,
             num_heads=old_attn.num_heads,
             dropout=old_attn.dropout,
@@ -271,25 +401,16 @@ def main():
             eta=model_args.eta,
             beta=model_args.beta
         )
-        # copy loaded weights
-        new_attn.load_state_dict(old_attn.state_dict(), strict=False)
-        model.model.decoder.layers[layer_idx].self_attn = new_attn
 
-    logger.info("FP Model:")
+    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
+    # on a small vocab and want a smaller embedding size, remove this test.
+    embedding_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
+
     logger.info(model)
-
-    # Display num params
-    n_embeddings = count_params(model.model.decoder.embed_tokens) + count_params(model.model.decoder.embed_positions)
-    n_decoder = count_params(model.model.decoder) - n_embeddings
-    n_head = count_params(model.lm_head)
-    logger.info(
-        f"\nNumber of parameters:\n"
-        f"\t* Embeddings:\t{n_embeddings}\n"
-        f"\t* Decoder:\t{n_decoder}\n"
-        f"\t* Head:\t{n_head}\n"
-        f"\t= Total (pre-training):\t{n_embeddings + n_decoder + n_head}\n"
-        f"\t= Total (decoder only):\t{n_embeddings + n_decoder}\n"
-    )
+    n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
+    logger.info(f"Training new model from scratch - Total size={n_params / 2 ** 20:.2f}M params")
 
     # Get the datasets
     tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}"
@@ -309,6 +430,14 @@ def main():
             raw_datasets = DatasetDict()
             raw_datasets["train"] = concatenate_datasets([bookcorpus, wiki_train])
             raw_datasets["validation"] = wiki_eval
+            """
+            raw_datasets = DatasetDict()
+            wiki1 = load_dataset("wikitext", "wikitext-103-v1", split="train[:100]")
+            wiki2 = load_dataset("wikitext", "wikitext-2-v1", split="train[:100]")
+            wiki_eval = load_dataset("wikitext", "wikitext-103-v1", split="validation[:100]")
+            raw_datasets["train"] = concatenate_datasets([wiki1, wiki2])
+            raw_datasets["validation"] = wiki_eval
+            """
         else:
             raw_datasets = load_dataset(
                 data_args.dataset_name,
@@ -432,24 +561,23 @@ def main():
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
+    if model_args.num_registered_tokens > 0:
+        def insert_registered_tokens(example, tokens):
+            new_example = example.copy()
+            interval = len(example) // (len(tokens) + 1)
+            for i, element in enumerate(tokens):
+                new_example.insert((i + 1) * interval + i, element)
+            return new_example
 
-    if config.num_registered_tokens > 0:
-        logger.info(f"Adding registered tokens ...")
-        new_tokens = [f"<s{i}>" for i in range(config.num_registered_tokens)]
-        registered_tokens = tokenizer("".join(new_tokens))
-        for k, v in registered_tokens.items():
-            registered_tokens[k] = v[1:]  # delete BOS
-        registered_tokens["labels"] = registered_tokens["input_ids"].copy()
-
-        # speed up the data processing
-        lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(1000))
         def add_registered_tokens(examples):
+            print("before", examples)
             result = {}
             for k, examples in examples.items():
                 new_examples = []
                 for example in examples:
-                    new_examples.append(registered_tokens[k] + example)
+                    new_examples.append(insert_registered_tokens(example, registered_tokens[k]))
                 result[k] = new_examples
+            print("after", result)
             return result
 
         with training_args.main_process_first(desc="adding registered tokens"):
@@ -457,6 +585,7 @@ def main():
                 lm_datasets = lm_datasets.map(
                     add_registered_tokens,
                     batched=True,
+                    batch_size=1,
                     num_proc=data_args.preprocessing_num_workers,
                     load_from_cache_file=False,
                     desc=f"Adding registered tokens",
@@ -467,87 +596,13 @@ def main():
                     batched=True,
                 )
 
-    if training_args.quantize:
-        click_config = get_quant_config()
-
-        # override number of batches
-        click_config.act_quant.num_batches = training_args.est_num_batches
-        click_config.quant.n_bits = training_args.n_bits
-        click_config.quant.n_bits_act = training_args.n_bits_act
-        click_config.quant.quant_setup = training_args.quant_setup
-        if training_args.no_weight_quant:
-            click_config.quant.weight_quant = False
-        if training_args.no_act_quant:
-            click_config.quant.act_quant = False
-
-        # use MSE for weights (ignore `args.ranges_weights`)
-        # click_config.quant.weight_quant_method = RangeEstimators.current_minmax
-        click_config.quant.weight_quant_method = RangeEstimators.MSE
-        click_config.quant.weight_opt_method = OptMethod.grid
-
-        # qmethod acts
-        if training_args.qmethod_acts == "symmetric_uniform":
-            click_config.quant.qmethod_act = QMethods.symmetric_uniform
-        elif training_args.qmethod_acts == "asymmetric_uniform":
-            click_config.quant.qmethod_act = QMethods.asymmetric_uniform
-        else:
-            raise NotImplementedError(f"Unknown qmethod_act setting, '{training_args.qmethod_acts}'")
-
-        # Acts ranges
-        if training_args.percentile is not None:
-            click_config.act_quant.options["percentile"] = training_args.percentile
-
-        if training_args.ranges_acts == "running_minmax":
-            click_config.act_quant.quant_method = RangeEstimators.running_minmax
-
-        elif training_args.ranges_acts == "MSE":
-            click_config.act_quant.quant_method = RangeEstimators.MSE
-            if training_args.qmethod_acts == "symmetric_uniform":
-                click_config.act_quant.options = dict(opt_method=OptMethod.grid)
-            elif training_args.qmethod_acts == "asymmetric_uniform":
-                click_config.act_quant.options = dict(opt_method=OptMethod.golden_section)
-
-        elif training_args.ranges_acts.startswith("L"):
-            click_config.act_quant.quant_method = RangeEstimators.Lp
-            p_norm = float(training_args.ranges_acts.replace("L", ""))
-            options = dict(p_norm=p_norm)
-            if training_args.qmethod_acts == "symmetric_uniform":
-                options["opt_method"] = OptMethod.grid
-            elif training_args.qmethod_acts == "asymmetric_uniform":
-                options["opt_method"] = OptMethod.golden_section
-            click_config.act_quant.options = options
-
-        else:
-            raise NotImplementedError(f"Unknown range estimation setting, '{training_args.ranges_acts}'")
-
-        qparams = val_qparams(click_config)
-        qparams["quant_dict"] = {}
-        model = QuantizedOPTForCausalLMWithExtras(model, **qparams)
-        model.set_quant_state(weight_quant=click_config.quant.weight_quant, act_quant=click_config.quant.act_quant)
-        logger.info("Quantized model:")
-        logger.info(model)
-
-        # Range estimation
-        logger.info("** Estimate quantization ranges on training data **")
-        logger.info(lm_datasets)
+    if training_args.do_train:
+        if "train" not in lm_datasets:
+            raise ValueError("--do_train requires a train dataset")
         train_dataset = lm_datasets["train"]
-        train_dataloader = DataLoader(
-            train_dataset,
-            shuffle=True,
-            collate_fn=default_data_collator,
-            batch_size=training_args.per_device_train_batch_size,
-            num_workers=data_args.preprocessing_num_workers,
-        )
-
-        pass_data_for_range_estimation(
-            loader=train_dataloader,
-            model=model,
-            act_quant=click_config.quant.act_quant,
-            max_num_batches=click_config.act_quant.num_batches,
-        )
-        model.fix_ranges()
-        model.set_quant_state(weight_quant=click_config.quant.weight_quant, act_quant=click_config.quant.act_quant)
-
+        if data_args.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+            train_dataset = train_dataset.select(range(max_train_samples))
 
     if training_args.do_eval:
         if "validation" not in lm_datasets:
@@ -570,145 +625,80 @@ def main():
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
-            labels = labels[:, config.num_registered_tokens + 1:].reshape(-1)
-            preds = preds[:, config.num_registered_tokens:-1].reshape(-1)
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
             return metric.compute(predictions=preds, references=labels)
+
+    # Initialize our Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        tokenizer=tokenizer,
+        # Data collator will default to DataCollatorWithPadding, so we change it.
+        data_collator=default_data_collator,
+        compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics
+        if training_args.do_eval and not is_torch_tpu_available() else None,
+    )
+
+    # Training
+    if training_args.do_train:
+        checkpoint = None
+        if training_args.resume_from_checkpoint is not None:
+            checkpoint = training_args.resume_from_checkpoint
+        elif last_checkpoint is not None:
+            checkpoint = last_checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        trainer.save_model()  # Saves the tokenizer too for easy upload
+
+        metrics = train_result.metrics
+
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
 
     # Evaluation
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        eval_dataloader = DataLoader(
-            eval_dataset,
-            collate_fn=default_data_collator,
-            batch_size=training_args.per_device_eval_batch_size,
-            num_workers=data_args.preprocessing_num_workers,
-        )
 
-        # attach hooks for activation stats
-        def attach_act_hooks(model):
-            act_dict = OrderedDict()
+        metrics = trainer.evaluate()
 
-            def _make_hook(name):
-                def _hook(mod, inp, out):
-                    if isinstance(inp, tuple) and len(inp) > 0:
-                        inp = inp[0]
-                    if isinstance(out, tuple) and len(out) > 0:
-                        out = out[0]
-                    act_dict[name] = (inp, out)
-
-                return _hook
-
-            for name, module in model.named_modules():
-                module.register_forward_hook(_make_hook(name))
-            return act_dict
-
-        act_dict = attach_act_hooks(model)
-        num_layers = len(model.model.decoder.layers)
-
-        ACT_KEYS = [
-            "model.decoder.final_layer_norm",
-            *[f"model.decoder.layers.{j}" for j in range(num_layers)],
-            *[f"model.decoder.layers.{j}.fc2" for j in range(num_layers)],
-            *[f"model.decoder.layers.{j}.final_layer_norm" for j in range(num_layers)],
-            *[f"model.decoder.layers.{j}.self_attn.out_proj" for j in range(num_layers)],
-            *[f"model.decoder.layers.{j}.self_attn_layer_norm" for j in range(num_layers)],
-        ]
-
-        act_inf_norms = OrderedDict()
-        act_kurtoses = OrderedDict()
-
-        # -----------------------------------------------------------------
-        # *** Evaluation ***
-        has_cuda = torch. cuda. is_available()
-        logger.info(f"Validate on GPU: {has_cuda}")
-        if has_cuda:
-            device = "cuda"
-        else:
-            device = "cpu"
-        model.to(device)
-        model.eval()
-        losses = []
-        for batch_idx, batch in enumerate(tqdm(eval_dataloader)):
-            with torch.no_grad():
-                inputs = {k: v.to(device) for k, v in batch.items()}
-                outputs = model(**inputs)
-
-            loss = outputs.loss
-            loss_ = loss.repeat(training_args.per_device_eval_batch_size)
-            losses.append(loss_)
-
-            # compute inf norms
-            if not training_args.quantize:
-                for name in ACT_KEYS:
-                    if name in act_dict:
-                        x_inp, x_out = act_dict[name]
-                        x = x_out
-                        x = x.view(x.size(0), -1)
-
-                        # compute inf norm
-                        inf_norms = x.norm(dim=1, p=np.inf)
-                        if not name in act_inf_norms:
-                            act_inf_norms[name] = AverageMeter()
-                        for v in inf_norms:
-                            act_inf_norms[name].update(v.item())
-
-                        # compute kurtosis
-                        if batch_idx <= 100:
-                            kurt = kurtosis(x)
-                            if not name in act_kurtoses:
-                                act_kurtoses[name] = AverageMeter()
-                            for v in kurt:
-                                act_kurtoses[name].update(v.item())
-
-        losses = torch.cat(losses)
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
         try:
-            eval_loss = torch.mean(losses)
-            perplexity = math.exp(eval_loss)
+            perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:
             perplexity = float("inf")
-        logger.info(f"perplexity: {perplexity:.4f}")
+        metrics["perplexity"] = perplexity
 
-        # metrics
-        metrics = OrderedDict([("perplexity", perplexity)])
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
-        if not training_args.quantize:
-            for name, v in act_inf_norms.items():
-                metrics[name] = v.avg
+    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
+    if data_args.dataset_name is not None:
+        kwargs["dataset_tags"] = data_args.dataset_name
+        if data_args.dataset_config_name is not None:
+            kwargs["dataset_args"] = data_args.dataset_config_name
+            kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
+        else:
+            kwargs["dataset"] = data_args.dataset_name
 
-            max_inf_norm = max(v.avg for v in act_inf_norms.values())
-            max_ffn_inf_norm = max(v.avg for k, v in act_inf_norms.items() if ".fc" in k)
-            max_layer_inf_norm = max(
-                act_inf_norms[f"model.decoder.layers.{j}"].avg for j in range(num_layers)
-            )
+    if training_args.push_to_hub:
+        trainer.push_to_hub(**kwargs)
+    else:
+        trainer.create_model_card(**kwargs)
 
-            avg_kurtosis = sum(v.avg for v in act_kurtoses.values()) / len(act_kurtoses.values())
-            max_kurtosis = max(v.avg for v in act_kurtoses.values())
-            max_kurtosis_layers = max(
-                act_kurtoses[f"model.decoder.layers.{j}"].avg for j in range(num_layers)
-            )
 
-            metrics["max_inf_norm"] = max_inf_norm
-            metrics["max_ffn_inf_norm"] = max_ffn_inf_norm
-            metrics["max_layer_inf_norm"] = max_layer_inf_norm
-
-            metrics["avg_kurtosis"] = avg_kurtosis
-            metrics["max_kurtosis"] = max_kurtosis
-            metrics["max_kurtosis_layers"] = max_kurtosis_layers
-
-            logger.info(f"Max inf norm: {max_inf_norm:.1f}")
-            logger.info(f"Max FFN inf norm: {max_ffn_inf_norm:.1f}")
-            logger.info(f"Max layer inf norm: {max_layer_inf_norm:.1f}")
-
-            logger.info(f"Avg Kurtosis: {avg_kurtosis:.2f}")
-            logger.info(f"Max Kurtosis: {max_kurtosis:.1f}")
-            logger.info(f"Max Kurtosis layers: {max_kurtosis_layers:.1f}")
-
-            logger.info(f"\nAll metrics:\n{pformat(metrics)}")
-
-        if training_args.output_dir is not None:
-            os.makedirs(training_args.output_dir, exist_ok=True)
-            with open(os.path.join(training_args.output_dir, "all_results.json"), "w") as f:
-                json.dump(metrics, f)
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
 
 
 if __name__ == "__main__":

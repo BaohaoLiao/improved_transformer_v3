@@ -171,8 +171,8 @@ class QuantizedOPTForCausalLMWithExtras(QuantizedModel):
         loss = None
         if labels is not None:
             # Shift so that tokens < n predict n
-            shift_logits = logits[..., 4:-1, :].contiguous()
-            shift_labels = labels[..., 4+1:].contiguous()
+            shift_logits = logits[..., self.config.num_registered_tokens:-1, :].contiguous()
+            shift_labels = labels[..., self.config.num_registered_tokens+1:].contiguous()
             # Flatten the tokens
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(shift_logits.view(-1, self.config.vocab_size), shift_labels.view(-1))
