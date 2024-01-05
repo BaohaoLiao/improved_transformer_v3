@@ -432,6 +432,7 @@ def main():
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
+    """
     if config.num_registered_tokens > 0:
         logger.info(f"Adding registered tokens ...")
         new_tokens = [f"<s{i}>" for i in range(config.num_registered_tokens)]
@@ -465,6 +466,7 @@ def main():
                     add_registered_tokens,
                     batched=True,
                 )
+    """
 
     if training_args.quantize:
         click_config = get_quant_config()
