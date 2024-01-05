@@ -437,15 +437,23 @@ def main():
     else:
         # Downloading and loading a dataset from the hub.
         if data_args.dataset_name == "wiki+book":
-            bookcorpus = load_dataset("bookcorpus", split="train[:20]")
-            wiki_train = load_dataset("wiki40b", "en", split="train[:20]")
-            wiki_eval = load_dataset("wiki40b", "en", split="validation[:20]")
+            """
+            bookcorpus = load_dataset("bookcorpus", split="train")
+            wiki_train = load_dataset("wiki40b", "en", split="train")
+            wiki_eval = load_dataset("wiki40b", "en", split="validation")
             wiki_train = wiki_train.remove_columns([col for col in wiki_train.column_names if col != "text"])
             wiki_eval = wiki_eval.remove_columns([col for col in wiki_eval.column_names if col != "text"])
             assert bookcorpus.features.type == wiki_train.features.type == wiki_eval.features.type
 
             raw_datasets = DatasetDict()
             raw_datasets["train"] = concatenate_datasets([bookcorpus, wiki_train])
+            raw_datasets["validation"] = wiki_eval
+            """
+            raw_datasets = DatasetDict()
+            wiki1 = load_dataset("wikitext", "wikitext-103-v1", split="train[:100]")
+            wiki2 = load_dataset("wikitext", "wikitext-2-v1", split="train[:100]")
+            wiki_eval = load_dataset("wikitext", "wikitext-103-v1", split="validation[:100]")
+            raw_datasets["train"] = concatenate_datasets([wiki1, wiki2])
             raw_datasets["validation"] = wiki_eval
         else:
             raw_datasets = load_dataset(
