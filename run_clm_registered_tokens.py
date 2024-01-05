@@ -587,6 +587,7 @@ def main():
                 new_examples = []
                 for example in examples:
                     new_examples.append(registered_tokens[k] + example)
+                    print(len(example), len(registered_tokens[k] + example))
                 result[k] = new_examples
             print("after", result)
             return result
