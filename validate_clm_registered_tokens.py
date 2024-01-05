@@ -441,7 +441,7 @@ def main():
         registered_tokens["labels"] = registered_tokens["input_ids"].copy()
 
         # speed up the data processing
-        lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(10000))
+        lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(1000))
         def add_registered_tokens(examples):
             result = {}
             for k, examples in examples.items():
