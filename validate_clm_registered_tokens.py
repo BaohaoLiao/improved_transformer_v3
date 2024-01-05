@@ -439,7 +439,6 @@ def main():
 
         def add_registered_tokens(examples):
             result = {}
-            print(examples.keys())
             for k, examples in examples.items():
                 new_examples = []
                 for example in examples:
@@ -449,7 +448,7 @@ def main():
 
         with training_args.main_process_first(desc="adding registered tokens"):
             if not data_args.streaming:
-                lm_datasets = lm_datasets.map(
+                lm_datasets["validation"] = lm_datasets["validation"].map(
                     add_registered_tokens,
                     batched=True,
                     num_proc=data_args.preprocessing_num_workers,
