@@ -437,7 +437,6 @@ def main():
     else:
         # Downloading and loading a dataset from the hub.
         if data_args.dataset_name == "wiki+book":
-            """
             bookcorpus = load_dataset("bookcorpus", split="train")
             wiki_train = load_dataset("wiki40b", "en", split="train")
             wiki_eval = load_dataset("wiki40b", "en", split="validation")
@@ -455,6 +454,7 @@ def main():
             wiki_eval = load_dataset("wikitext", "wikitext-103-v1", split="validation[:100]")
             raw_datasets["train"] = concatenate_datasets([wiki1, wiki2])
             raw_datasets["validation"] = wiki_eval
+            """
         else:
             raw_datasets = load_dataset(
                 data_args.dataset_name,
@@ -593,6 +593,7 @@ def main():
                 lm_datasets = lm_datasets.map(
                     add_registered_tokens,
                     batched=True,
+                    batch_size=1,
                     num_proc=data_args.preprocessing_num_workers,
                     load_from_cache_file=False,
                     desc=f"Adding registered tokens",
