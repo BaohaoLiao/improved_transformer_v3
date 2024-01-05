@@ -448,7 +448,7 @@ def main():
             for k, examples in examples.items():
                 new_examples = []
                 for example in examples:
-                    new_examples.append(registered_tokens[k][4:] + example)
+                    new_examples.append(registered_tokens[k][:4] + example)
                 result[k] = new_examples
             return result
 
