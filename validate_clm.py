@@ -586,11 +586,19 @@ def main():
 
         # -----------------------------------------------------------------
         # *** Evaluation ***
+        has_cuda = torch. cuda. is_available()
+        logger.info(f"Validate on GPU: {has_cuda}")
+        if has_cuda:
+            device = "cuda"
+        else:
+            device = "cpu"
+        model.to(device)
         model.eval()
         losses = []
         for batch_idx, batch in enumerate(tqdm(eval_dataloader)):
             with torch.no_grad():
-                outputs = model(**batch)
+                inputs = {k: v.to(device) for k, v in batch.items()}
+                outputs = model(**inputs)
 
             loss = outputs.loss
             loss_ = loss.repeat(training_args.per_device_eval_batch_size)
