@@ -62,7 +62,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
-from run_clm import ModelArguments, DataTrainingArguments
+from run_clm_registered_tokens import ModelArguments, DataTrainingArguments
 from models.opt_attention import OPTAttentionWithExtras
 from models.quantized_opt_for_causal_lm import QuantizedOPTForCausalLMWithExtras
 from models.quant_configs import get_quant_config
