@@ -580,12 +580,14 @@ def main():
 
     if model_args.num_registered_tokens > 0:
         def add_registered_tokens(examples):
+            print("before", examples)
             result = {}
             for k, examples in examples.items():
                 new_examples = []
                 for example in examples:
                     new_examples.append(registered_tokens[k] + example)
                 result[k] = new_examples
+            print("after", result)
             return result
 
         with training_args.main_process_first(desc="adding registered tokens"):
