@@ -443,6 +443,7 @@ def main():
 
         # speed up the data processing
         lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(1000))
+        lm_datasets["validation"] = lm_datasets["validation"].select(range(1000))
         def add_registered_tokens(examples):
             result = {}
             for k, examples in examples.items():
