@@ -174,6 +174,8 @@ class BertSelfAttentionWithExtras(nn.Module):
         else:
             attention_probs = self.softmax_fn(attention_scores, attention_mask, dim=-1)
 
+        print(attention_probs.size(), attention_probs.sum(dim=-1))
+
         # YB: for logging softmax output
         attention_probs = self.attn_probs_before_dropout(attention_probs)
 
