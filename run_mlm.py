@@ -403,6 +403,7 @@ def main():
     else:
         # Downloading and loading a dataset from the hub.
         if data_args.dataset_name == "wiki+book":
+            """
             bookcorpus = load_dataset("bookcorpus", split="train")
             wiki_train = load_dataset("wiki40b", "en", split="train")
             wiki_eval = load_dataset("wiki40b", "en", split="validation")
@@ -417,7 +418,6 @@ def main():
             raw_datasets = DatasetDict()
             raw_datasets["train"] = load_dataset("bookcorpus", split="train").select(range(1000))
             raw_datasets["validation"] = load_dataset("wiki40b", "en", split="validation").select(range(1000))
-            """
         else:
             raw_datasets = load_dataset(
                 data_args.dataset_name,
