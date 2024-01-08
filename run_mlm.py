@@ -52,6 +52,8 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from models.bert_attention import BertSelfAttentionWithExtras
+
 os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 #check_min_version("4.35.0.dev0")
@@ -452,6 +454,25 @@ def main():
     else:
         logger.info("Training new model from scratch")
         model = AutoModelForMaskedLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
+
+    # >> replace Self-attention module with ours
+    # NOTE: currently assumes BERT
+    for layer_idx in range(len(model.bert.encoder.layer)):
+        old_self = model.bert.encoder.layer[layer_idx].attention.self
+        new_self = BertSelfAttentionWithExtras(
+            config,
+            ## from YB
+            alpha=model_args.alpha,
+            max_seq_length=data_args.block_size,
+            # Baohao
+            eta=model_args.eta,
+            beta=model_args.beta
+        )
+
+        # copy loaded weights
+        if model_args.model_name_or_path is not None:
+            new_self.load_state_dict(old_self.state_dict(), strict=False)
+        model.bert.encoder.layer[layer_idx].attention.self = new_self
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
