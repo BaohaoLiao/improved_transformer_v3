@@ -144,6 +144,18 @@ class ModelArguments:
             )
         },
     )
+    alpha: float = field(
+        default=None,
+        metadata={"help": ("If specified, use clipped softmax gamma = -alpha / seq_length.")},
+    )
+    eta: float = field(
+        default=None,
+        metadata={"help": ("If specified, use normalized clipped softmax.")},
+    )
+    beta: float = field(
+        default=1.0,
+        metadata={"help": ("Normalized constant for the clipped softmax.")},
+    )
 
     def __post_init__(self):
         if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
