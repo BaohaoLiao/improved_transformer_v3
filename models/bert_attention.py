@@ -12,7 +12,6 @@ def normalized_clipped_softmax(data, attention_mask: torch.FloatTensor, dim=1, e
     """
     attention_mask: 0 means unmask, -inf means mask
     """
-    print("Hi")
     dtype, device = data.dtype, data.device
 
     src_len = (attention_mask == 0).sum(dim=-1)
@@ -174,8 +173,6 @@ class BertSelfAttentionWithExtras(nn.Module):
             attention_probs = self.softmax_fn(attention_scores, dim=-1)
         else:
             attention_probs = self.softmax_fn(attention_scores, attention_mask, dim=-1)
-
-        print(attention_probs.size(), attention_probs.sum(dim=-1))
 
         # YB: for logging softmax output
         attention_probs = self.attn_probs_before_dropout(attention_probs)
