@@ -458,7 +458,7 @@ def main():
             return result
 
         # speed up the data processing
-        #lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(1000))
+        lm_datasets["train"] = lm_datasets["train"].shuffle(seed=training_args.seed).select(range(1000))
         #lm_datasets["validation"] = lm_datasets["validation"].select(range(1000))
         with training_args.main_process_first(desc="adding registered tokens"):
             if not data_args.streaming:
