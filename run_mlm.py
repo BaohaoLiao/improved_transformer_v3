@@ -29,10 +29,11 @@ import warnings
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional
+from pathlib import Path
 
 import datasets
 import evaluate
-from datasets import load_dataset, DatasetDict, concatenate_datasets
+from datasets import load_dataset, DatasetDict, concatenate_datasets, load_from_disk
 
 import transformers
 from transformers import (
@@ -176,10 +177,8 @@ class DataTrainingArguments:
     dataset_config_name: Optional[str] = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
-    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
-    validation_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+    data_cache_dir: Optional[str] = field(
+        default=None, metadata={"help": "Cached datasets."}
     )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
@@ -323,92 +322,6 @@ def main():
     # Set seed before initializing model.
     set_seed(training_args.seed)
 
-    # Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
-    # or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
-    # (the dataset will be downloaded automatically from the datasets Hub
-    #
-    # For CSV/JSON files, this script will use the column called 'text' or the first column. You can easily tweak this
-    # behavior (see below)
-    #
-    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
-    # download the dataset.
-    if data_args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        if data_args.dataset_name == "wiki+book":
-            bookcorpus = load_dataset("bookcorpus", split="train")
-            wiki_train = load_dataset("wiki40b", "en", split="train")
-            wiki_eval = load_dataset("wiki40b", "en", split="validation")
-            wiki_train = wiki_train.remove_columns([col for col in wiki_train.column_names if col != "text"])
-            wiki_eval = wiki_eval.remove_columns([col for col in wiki_eval.column_names if col != "text"])
-            assert bookcorpus.features.type == wiki_train.features.type == wiki_eval.features.type
-
-            raw_datasets = DatasetDict()
-            raw_datasets["train"] = concatenate_datasets([bookcorpus, wiki_train])
-            raw_datasets["validation"] = wiki_eval
-            """
-            raw_datasets = DatasetDict()
-            raw_datasets["train"] = load_dataset("bookcorpus", split="train").select(range(1000))
-            raw_datasets["validation"] = load_dataset("wiki40b", "en", split="validation").select(range(1000))
-            """
-        else:
-            raw_datasets = load_dataset(
-                data_args.dataset_name,
-                data_args.dataset_config_name,
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
-                streaming=data_args.streaming,
-            )
-            if "validation" not in raw_datasets.keys():
-                raw_datasets["validation"] = load_dataset(
-                    data_args.dataset_name,
-                    data_args.dataset_config_name,
-                    split=f"train[:{data_args.validation_split_percentage}%]",
-                    cache_dir=model_args.cache_dir,
-                    token=model_args.token,
-                    streaming=data_args.streaming,
-                )
-                raw_datasets["train"] = load_dataset(
-                    data_args.dataset_name,
-                    data_args.dataset_config_name,
-                    split=f"train[{data_args.validation_split_percentage}%:]",
-                    cache_dir=model_args.cache_dir,
-                    token=model_args.token,
-                    streaming=data_args.streaming,
-                )
-    else:
-        data_files = {}
-        if data_args.train_file is not None:
-            data_files["train"] = data_args.train_file
-            extension = data_args.train_file.split(".")[-1]
-        if data_args.validation_file is not None:
-            data_files["validation"] = data_args.validation_file
-            extension = data_args.validation_file.split(".")[-1]
-        if extension == "txt":
-            extension = "text"
-        raw_datasets = load_dataset(
-            extension,
-            data_files=data_files,
-            cache_dir=model_args.cache_dir,
-            token=model_args.token,
-        )
-
-        # If no validation data is there, validation_split_percentage will be used to divide the dataset.
-        if "validation" not in raw_datasets.keys():
-            raw_datasets["validation"] = load_dataset(
-                extension,
-                data_files=data_files,
-                split=f"train[:{data_args.validation_split_percentage}%]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
-            )
-            raw_datasets["train"] = load_dataset(
-                extension,
-                data_files=data_files,
-                split=f"train[{data_args.validation_split_percentage}%:]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
-            )
-
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
@@ -475,7 +388,7 @@ def main():
             config,
             ## from YB
             alpha=model_args.alpha,
-            max_seq_length=data_args.block_size,
+            max_seq_length=data_args.max_seq_length,
             # Baohao
             eta=model_args.eta,
             beta=model_args.beta
@@ -492,68 +405,82 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    # Preprocessing the datasets.
-    # First we tokenize all the texts.
-    if training_args.do_train:
-        column_names = list(raw_datasets["train"].features)
+    # Get the datasets
+    tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.max_seq_length}"
+    if data_args.dataset_name == "wiki+book" and tokenized_book_wiki_path.exists():
+        logger.info(f"Loading tokenized dataset from {str(tokenized_book_wiki_path)}")
+        tokenized_datasets = load_from_disk(str(tokenized_book_wiki_path))
     else:
-        column_names = list(raw_datasets["validation"].features)
-    text_column_name = "text" if "text" in column_names else column_names[0]
+        # Downloading and loading a dataset from the hub.
+        if data_args.dataset_name == "wiki+book":
+            bookcorpus = load_dataset("bookcorpus", split="train")
+            wiki_train = load_dataset("wiki40b", "en", split="train")
+            wiki_eval = load_dataset("wiki40b", "en", split="validation")
+            wiki_train = wiki_train.remove_columns([col for col in wiki_train.column_names if col != "text"])
+            wiki_eval = wiki_eval.remove_columns([col for col in wiki_eval.column_names if col != "text"])
+            assert bookcorpus.features.type == wiki_train.features.type == wiki_eval.features.type
 
-    if data_args.max_seq_length is None:
-        max_seq_length = tokenizer.model_max_length
-        if max_seq_length > 1024:
-            logger.warning(
-                "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
-                " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
-                " override this default with `--block_size xxx`."
+            raw_datasets = DatasetDict()
+            raw_datasets["train"] = concatenate_datasets([bookcorpus, wiki_train])
+            raw_datasets["validation"] = wiki_eval
+            """
+            raw_datasets = DatasetDict()
+            raw_datasets["train"] = load_dataset("bookcorpus", split="train").select(range(1000))
+            raw_datasets["validation"] = load_dataset("wiki40b", "en", split="validation").select(range(1000))
+            """
+        else:
+            raw_datasets = load_dataset(
+                data_args.dataset_name,
+                data_args.dataset_config_name,
+                cache_dir=model_args.cache_dir,
+                token=model_args.token,
+                streaming=data_args.streaming,
             )
-            max_seq_length = 1024
-    else:
-        if data_args.max_seq_length > tokenizer.model_max_length:
-            logger.warning(
-                f"The max_seq_length passed ({data_args.max_seq_length}) is larger than the maximum length for the "
-                f"model ({tokenizer.model_max_length}). Using max_seq_length={tokenizer.model_max_length}."
-            )
-        max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
-
-    if data_args.line_by_line:
-        # When using line_by_line, we just tokenize each nonempty line.
-        padding = "max_length" if data_args.pad_to_max_length else False
-
-        def tokenize_function(examples):
-            # Remove empty lines
-            examples[text_column_name] = [
-                line for line in examples[text_column_name] if len(line) > 0 and not line.isspace()
-            ]
-            return tokenizer(
-                examples[text_column_name],
-                padding=padding,
-                truncation=True,
-                max_length=max_seq_length,
-                # We use this option because DataCollatorForLanguageModeling (see below) is more efficient when it
-                # receives the `special_tokens_mask`.
-                return_special_tokens_mask=True,
-            )
-
-        with training_args.main_process_first(desc="dataset map tokenization"):
-            if not data_args.streaming:
-                tokenized_datasets = raw_datasets.map(
-                    tokenize_function,
-                    batched=True,
-                    num_proc=data_args.preprocessing_num_workers,
-                    remove_columns=[text_column_name],
-                    load_from_cache_file=not data_args.overwrite_cache,
-                    desc="Running tokenizer on dataset line_by_line",
+            if "validation" not in raw_datasets.keys():
+                raw_datasets["validation"] = load_dataset(
+                    data_args.dataset_name,
+                    data_args.dataset_config_name,
+                    split=f"train[:{data_args.validation_split_percentage}%]",
+                    cache_dir=model_args.cache_dir,
+                    token=model_args.token,
+                    streaming=data_args.streaming,
                 )
-            else:
-                tokenized_datasets = raw_datasets.map(
-                    tokenize_function,
-                    batched=True,
-                    remove_columns=[text_column_name],
+                raw_datasets["train"] = load_dataset(
+                    data_args.dataset_name,
+                    data_args.dataset_config_name,
+                    split=f"train[{data_args.validation_split_percentage}%:]",
+                    cache_dir=model_args.cache_dir,
+                    token=model_args.token,
+                    streaming=data_args.streaming,
                 )
-    else:
-        # Otherwise, we tokenize every text, then concatenate them together before splitting them in smaller parts.
+
+        # Preprocessing the datasets.
+        # First we tokenize all the texts.
+        if training_args.do_train:
+            column_names = list(raw_datasets["train"].features)
+        else:
+            column_names = list(raw_datasets["validation"].features)
+        text_column_name = "text" if "text" in column_names else column_names[0]
+
+        if data_args.max_seq_length is None:
+            max_seq_length = tokenizer.model_max_length
+            if max_seq_length > 1024:
+                logger.warning(
+                    "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
+                    " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
+                    " override this default with `--block_size xxx`."
+                )
+                max_seq_length = 1024
+        else:
+            if data_args.max_seq_length > tokenizer.model_max_length:
+                logger.warning(
+                    f"The max_seq_length passed ({data_args.max_seq_length}) is larger than the maximum length for the "
+                    f"model ({tokenizer.model_max_length}). Using max_seq_length={tokenizer.model_max_length}."
+                )
+            max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
+
+
+        # we tokenize every text, then concatenate them together before splitting them in smaller parts.
         # We use `return_special_tokens_mask=True` because DataCollatorForLanguageModeling (see below) is more
         # efficient when it receives the `special_tokens_mask`.
         def tokenize_function(examples):
@@ -613,6 +540,11 @@ def main():
                     group_texts,
                     batched=True,
                 )
+
+        # Save tokenized dataset for saving time if re-running
+        if data_args.dataset_name == "wiki+book":
+            tokenized_datasets.save_to_disk(
+                Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.max_seq_length}")
 
     if training_args.do_train:
         if "train" not in tokenized_datasets:
