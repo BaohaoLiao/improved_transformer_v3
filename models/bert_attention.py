@@ -169,7 +169,10 @@ class BertSelfAttentionWithExtras(nn.Module):
             attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
-        attention_probs = self.softmax_fn(attention_scores, attention_mask, dim=-1)
+        if self.eta is None:
+            attention_probs = self.softmax_fn(attention_scores, dim=-1)
+        else:
+            attention_probs = self.softmax_fn(attention_scores, attention_mask, dim=-1)
 
         # YB: for logging softmax output
         attention_probs = self.attn_probs_before_dropout(attention_probs)
