@@ -12,6 +12,7 @@ def normalized_clipped_softmax(data, attention_mask: torch.FloatTensor, dim=1, e
     """
     attention_mask: 0 means unmask, -inf means mask
     """
+    print("Hi")
     dtype, device = data.dtype, data.device
 
     src_len = (attention_mask == 0).sum(dim=-1)
