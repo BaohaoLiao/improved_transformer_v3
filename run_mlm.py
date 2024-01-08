@@ -411,7 +411,7 @@ def main():
             assert bookcorpus.features.type == wiki_train.features.type == wiki_eval.features.type
 
             raw_datasets = DatasetDict()
-            raw_datasets["train"] = concatenate_datasets([wiki_train, bookcorpus])
+            raw_datasets["train"] = concatenate_datasets([bookcorpus, wiki_train])
             raw_datasets["validation"] = wiki_eval
             """
             raw_datasets = DatasetDict()
