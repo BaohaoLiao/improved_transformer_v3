@@ -569,8 +569,8 @@ def main():
             with open(os.path.join(training_args.output_dir, "all_results.json"), "w") as f:
                 json.dump(metrics, f)
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
 
 
 
