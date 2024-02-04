@@ -455,7 +455,7 @@ def main():
         if training_args.qmethod_acts == "symmetric_uniform":
             click_config.quant.qmethod_act = QMethods.symmetric_uniform
         elif training_args.qmethod_acts == "asymmetric_uniform":
-            click_config.quant.qmethod_act = QMethods.asymmetric_uniform
+            click_config.quant.qmethod_act = QMethods.asymmetric_uniform`
         else:
             raise NotImplementedError(f"Unknown qmethod_act setting, '{training_args.qmethod_acts}'")
 
