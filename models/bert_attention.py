@@ -73,12 +73,15 @@ class BertSelfAttentionWithExtras(nn.Module):
         # define softmax function
         self.eta = eta
         if alpha is not None:
+            print("??????????0")
             assert max_seq_length is not None
             gamma = -alpha / max_seq_length
             self.softmax_fn = partial(clipped_softmax, gamma=gamma, eta=1.0)
         elif eta is not None:
+            print("??????????1")
             self.softmax_fn = partial(normalized_clipped_softmax, eta=eta, beta=beta)
         else:
+            print("??????????2")
             self.softmax_fn = nn.functional.softmax
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
