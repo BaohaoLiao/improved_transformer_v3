@@ -27,7 +27,10 @@ from quantization.range_estimators import CurrentMinMaxEstimator
 from utils import DotDict
 
 # backward-compatibility
-HAS_PAST_KEY_ATTR = tuple(map(int, transformers.__version__.split(".")[:-1])) >= (4, 2, 0)
+try:
+    HAS_PAST_KEY_ATTR = tuple(map(int, transformers.__version__.split("."))) >= (4, 2, 0)
+except:
+    HAS_PAST_KEY_ATTR = tuple(map(int, transformers.__version__.split(".")[:-1])) >= (4, 2, 0)
 
 DEFAULT_QUANT_DICT = {
     # Attention
