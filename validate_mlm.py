@@ -20,7 +20,6 @@ import transformers
 from transformers import (
     HfArgumentParser,
     TrainingArguments,
-    send_example_telemetry,
     set_seed,
     AutoConfig,
     CONFIG_MAPPING,
@@ -28,6 +27,7 @@ from transformers import (
     AutoModelForMaskedLM,
     DataCollatorForLanguageModeling,
 )
+from transformers.utils import check_min_version, send_example_telemetry
 import datasets
 from datasets import load_dataset, load_from_disk, DatasetDict, concatenate_datasets
 
