@@ -222,7 +222,6 @@ class QuantizedBertSelfAttentionWithExtras(QuantizedModel):
         # softmax fn
         self.softmax_fn = org_model.softmax_fn
         self.eta = org_model.eta
-        print("!!!!!!!!!!", self.softmax_fn, self.eta)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
