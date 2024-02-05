@@ -665,7 +665,7 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
     pad_to_multiple_of: Optional[int] = None
     tf_experimental_compile: bool = False
     return_tensors: str = "pt"
-    registered_tokens = None
+    registered_tokens: List[Union[List[int], Any, Dict[str, Any]]] = None
 
     def __post_init__(self):
         if self.mlm and self.tokenizer.mask_token is None:
