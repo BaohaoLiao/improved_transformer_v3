@@ -186,18 +186,14 @@ def main():
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
 
-    if model_args.num_registered_tokens > 0:
-        logger.info(f"Vocabulary size before adding registered tokens: {len(tokenizer.vocab)}")
+    if config.num_registered_tokens > 0:
         new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
-        assert len(set(new_tokens) - set(tokenizer.vocab.keys())) == model_args.num_registered_tokens
-        tokenizer.add_tokens(new_tokens)
         registered_tokens = tokenizer("".join(new_tokens))
         for k, v in registered_tokens.items():
-            registered_tokens[k] = v[1:] # delete BOS
-        registered_tokens["labels"] = registered_tokens["input_ids"].copy()
-        config.num_registered_tokens = model_args.num_registered_tokens
+            registered_tokens[k] = v[1:-1]  # delete BOS and EOS
+        registered_tokens["labels"] = [-100] * config.num_registered_tokens
         logger.info(f"Added registered tokens: {new_tokens}")
-        logger.info(f"Vocabulary size after adding registered tokens: {len(tokenizer.vocab)}")
+        logger.info(f"New vocabulary: {registered_tokens}")
 
     if model_args.model_name_or_path:
         model = AutoModelForMaskedLM.from_pretrained(
