@@ -157,6 +157,10 @@ class ModelArguments:
         default=1.0,
         metadata={"help": ("Normalized constant for the clipped softmax.")},
     )
+    num_registered_tokens: int = field(
+        default=0,
+        metadata={"help": ("Number of registerred tokens.")},
+    )
 
     def __post_init__(self):
         if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
@@ -354,6 +358,20 @@ def main():
             "You are instantiating a new tokenizer from scratch. This is not supported by this script. "
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
+
+    if model_args.num_registered_tokens > 0:
+        logger.info(f"Vocabulary size before adding registered tokens: {len(tokenizer.vocab)}")
+        new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
+        assert len(set(new_tokens) - set(tokenizer.vocab.keys())) == model_args.num_registered_tokens
+        tokenizer.add_tokens(new_tokens)
+        registered_tokens = tokenizer("".join(new_tokens))
+        for k, v in registered_tokens.items():
+            registered_tokens[k] = v[1:] # delete BOS TODO
+        registered_tokens["labels"] = [-100] * model_args.num_registered_tokens
+        print("!!!!!!!!!!", registered_tokens)
+        config.num_registered_tokens = model_args.num_registered_tokens
+        logger.info(f"Added registered tokens: {new_tokens}")
+        logger.info(f"Vocabulary size after adding registered tokens: {len(tokenizer.vocab)}")
 
     if model_args.model_name_or_path:
         model = AutoModelForMaskedLM.from_pretrained(

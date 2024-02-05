@@ -810,8 +810,6 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
         inputs[indices_random] = random_words[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        print("input", inputs)
-        print("labels", labels)
         return inputs, labels
 
     def numpy_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
