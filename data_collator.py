@@ -24,6 +24,7 @@ import numpy as np
 from transformers.models.bert import BertTokenizer, BertTokenizerFast
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
+import torch
 
 
 InputDataClass = NewType("InputDataClass", Any)
@@ -773,17 +774,18 @@ class DataCollatorForLanguageModeling(DataCollatorMixin):
             batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
                 batch["input_ids"], special_tokens_mask=special_tokens_mask
             )
-
-            #for k, v in batch.items():
-            #    bs = v.shape[0]
-            #    batch[k] =
-            #registered_tokens
-
+            if self.registered_tokens is not None:
+                for k, v in batch.items():
+                    bs = v.shape[0]
+                    registered = torch.tensor(self.registered_tokens[k], dtype=torch.long)
+                    registered = registered.unsqueeze(0).repeat(bs, 1)
+                    batch[k] = torch.cat((registered, v), dim=1)
         else:
             labels = batch["input_ids"].clone()
             if self.tokenizer.pad_token_id is not None:
                 labels[labels == self.tokenizer.pad_token_id] = -100
             batch["labels"] = labels
+        print(batch)
         return batch
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:

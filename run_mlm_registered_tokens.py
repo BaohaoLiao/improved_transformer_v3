@@ -368,7 +368,6 @@ def main():
         for k, v in registered_tokens.items():
             registered_tokens[k] = v[1:-1] # delete BOS and EOS
         registered_tokens["labels"] = [-100] * model_args.num_registered_tokens
-        print(registered_tokens)
         config.num_registered_tokens = model_args.num_registered_tokens
         logger.info(f"Added registered tokens: {new_tokens}")
         logger.info(f"Vocabulary size after adding registered tokens: {len(tokenizer.vocab)}")
