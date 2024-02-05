@@ -31,7 +31,7 @@ import datasets
 from datasets import load_dataset, load_from_disk, DatasetDict, concatenate_datasets
 
 from models.bert_attention import BertSelfAttentionWithExtras
-from run_mlm import ModelArguments, DataTrainingArguments
+from run_mlm_registered_tokens import ModelArguments, DataTrainingArguments
 from models.quant_configs import get_quant_config
 from quantization.range_estimators import OptMethod, RangeEstimators
 from utils import count_params, val_qparams, pass_data_for_range_estimation, kurtosis
