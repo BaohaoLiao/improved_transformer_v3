@@ -25,6 +25,8 @@ def normalized_clipped_softmax(data, attention_mask: torch.FloatTensor, dim=1, e
     sm_out = nn.functional.softmax(data, dim=dim, **kw)
     mask = attention_mask == 0 # for pad token
     stretched_out = (sm_out * factor + shift) * mask
+    print(eta, beta)
+    print(stretched_out.sum(dim=-1))
     return torch.clip(stretched_out, 0, 1)
 
 
