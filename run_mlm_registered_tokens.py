@@ -366,7 +366,7 @@ def main():
         tokenizer.add_tokens(new_tokens)
         registered_tokens = tokenizer("".join(new_tokens))
         for k, v in registered_tokens.items():
-            registered_tokens[k] = v[1:-1] # delete BOS TODO
+            registered_tokens[k] = v[1:-1] # delete BOS and EOS
         registered_tokens["labels"] = [-100] * model_args.num_registered_tokens
         config.num_registered_tokens = model_args.num_registered_tokens
         logger.info(f"Added registered tokens: {new_tokens}")
@@ -411,6 +411,8 @@ def main():
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
+
+    logger.info(model)
 
     # Get the datasets
     tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.max_seq_length}"
