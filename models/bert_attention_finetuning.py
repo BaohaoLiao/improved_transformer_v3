@@ -14,11 +14,10 @@ def clipped_softmax(data, attention_mask: torch.FloatTensor, dim=1, alpha=1., et
     dtype, device = data.dtype, data.device
 
     src_len = (attention_mask == 0).sum(dim=-1)
-    gamma = (-alpha / src_len).to(dtype).to(device)
+    gamma = (-alpha / src_len).to(dtype).to(device).unsqueeze(-1)
     mask = attention_mask == 0
 
     sm_out = nn.functional.softmax(data, dim=dim, **kw)
-    print(sm_out.size(), mask.size(), gamma.size())
     stretched_out = (sm_out * (eta - gamma) + gamma) * mask
     torch.clip(stretched_out, 0, 1)
 
