@@ -399,6 +399,8 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
+    logger.info(model)
+
     # Get the datasets
     tokenized_book_wiki_path = Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.max_seq_length}"
     if data_args.dataset_name == "wiki+book" and tokenized_book_wiki_path.exists():
