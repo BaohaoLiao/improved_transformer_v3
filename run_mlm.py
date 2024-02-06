@@ -237,6 +237,10 @@ class DataTrainingArguments:
         },
     )
     streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    metric_path: Optional[str] = field(
+        default=None,
+        metadata={"help": ""},
+    )
 
     def __post_init__(self):
         if self.streaming:
@@ -559,7 +563,10 @@ def main():
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        metric = evaluate.load("accuracy")
+        if data_args.metric_path is not None:
+            metric = evaluate.load(data_args.metric_path)
+        else:
+            metric = evaluate.load("accuracy")
 
         def compute_metrics(eval_preds):
             preds, labels = eval_preds
