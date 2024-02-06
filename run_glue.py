@@ -47,10 +47,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
-from models import (
-    RobertaForSequenceClassification,
-    ImprovedQRobertaForSequenceClassification
-)
+from models.bert_attention_finetuning import BertSelfAttentionWithExtras
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -225,6 +222,18 @@ class ModelArguments:
     ignore_mismatched_sizes: bool = field(
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
+    )
+    alpha: float = field(
+        default=None,
+        metadata={"help": ("If specified, use clipped softmax gamma = -alpha / seq_length.")},
+    )
+    eta: float = field(
+        default=None,
+        metadata={"help": ("If specified, use normalized clipped softmax.")},
+    )
+    beta: float = field(
+        default=1.0,
+        metadata={"help": ("Normalized constant for the clipped softmax.")},
     )
 
 
@@ -403,39 +412,33 @@ def main():
         token=model_args.token,
         trust_remote_code=model_args.trust_remote_code,
     )
-    if model_args.model_type == "vanilla":
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            token=model_args.token,
-            trust_remote_code=model_args.trust_remote_code,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=config,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        token=model_args.token,
+        trust_remote_code=model_args.trust_remote_code,
+        ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+    )
+    # >> replace Self-attention module with ours
+    # NOTE: currently assumes BERT
+    for layer_idx in range(len(model.bert.encoder.layer)):
+        old_self = model.bert.encoder.layer[layer_idx].attention.self
+        new_self = BertSelfAttentionWithExtras(
+            config,
+            ## from YB
+            alpha=model_args.alpha,
+            max_seq_length=data_args.max_seq_length,
+            # Baohao
+            eta=model_args.eta,
+            beta=model_args.beta
         )
-    elif model_args.model_type == "qroberta":
-        model = RobertaForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            token=model_args.token,
-            trust_remote_code=model_args.trust_remote_code,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
-    elif model_args.model_type == "improved_qroberta":
-        model = ImprovedQRobertaForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            token=model_args.token,
-            trust_remote_code=model_args.trust_remote_code,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
+        # copy loaded weights
+        if model_args.model_name_or_path is not None:
+            new_self.load_state_dict(old_self.state_dict(), strict=False)
+        model.bert.encoder.layer[layer_idx].attention.self = new_self
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
