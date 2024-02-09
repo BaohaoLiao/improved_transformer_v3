@@ -565,6 +565,8 @@ def main():
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
+    if not training_args.do_train:
+        del lm_datasets["train"]
     if model_args.num_registered_tokens > 0:
         def insert_registered_tokens(example, tokens):
             new_example = example.copy()
