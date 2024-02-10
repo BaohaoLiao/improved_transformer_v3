@@ -353,8 +353,9 @@ def main():
     if model_args.num_registered_tokens > 0:
         logger.info(f"Vocabulary size before adding registered tokens: {len(tokenizer.vocab)}")
         new_tokens = [f"<s{i}>" for i in range(model_args.num_registered_tokens)]
-        assert len(set(new_tokens) - set(tokenizer.vocab.keys())) == model_args.num_registered_tokens
-        tokenizer.add_tokens(new_tokens)
+        if model_args.model_name_or_path is None:
+            assert len(set(new_tokens) - set(tokenizer.vocab.keys())) == model_args.num_registered_tokens
+            tokenizer.add_tokens(new_tokens)
         registered_tokens = tokenizer("".join(new_tokens))
         for k, v in registered_tokens.items():
             registered_tokens[k] = v[1:] # delete BOS
@@ -561,6 +562,10 @@ def main():
         if data_args.dataset_name == "wiki+book":
             lm_datasets.save_to_disk(Path(data_args.data_cache_dir) / f"tokenized_book_wiki_{data_args.block_size}")
 
+    if not training_args.do_train:
+        raw_datasets = DatasetDict()
+        raw_datasets["validation"] = lm_datasets["validation"]
+        lm_datasets = raw_datasets
     if model_args.num_registered_tokens > 0:
         def insert_registered_tokens(example, tokens):
             new_example = example.copy()
