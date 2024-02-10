@@ -242,7 +242,10 @@ class DataTrainingArguments:
     keep_linebreaks: bool = field(
         default=True, metadata={"help": "Whether to keep line breaks when using TXT files or not."}
     )
-
+    metric_path: Optional[str] = field(
+        default=None,
+        metadata={"help": ""},
+    )
     def __post_init__(self):
         if self.streaming:
             require_version("datasets>=2.0.0", "The streaming feature requires `datasets>=2.0.0`")
@@ -626,7 +629,10 @@ def main():
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        metric = evaluate.load("accuracy") # load_metric("accuracy")
+        if data_args.metric_path is not None:
+            metric = evaluate.load(data_args.metric_path)
+        else:
+            metric = evaluate.load("accuracy")
 
         def compute_metrics(eval_preds):
             preds, labels = eval_preds
