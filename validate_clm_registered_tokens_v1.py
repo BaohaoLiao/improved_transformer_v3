@@ -439,7 +439,7 @@ def main():
         registered_tokens = tokenizer("".join(new_tokens))
         for k, v in registered_tokens.items():
             registered_tokens[k] = v[1:]  # delete BOS
-        registered_tokens["labels"] = registered_tokens["input_ids"].copy()
+        registered_tokens["labels"] = [-100] * config.num_registered_tokens
 
         def insert_registered_tokens(example, tokens):
             new_example = example.copy()
