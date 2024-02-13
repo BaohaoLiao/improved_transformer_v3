@@ -585,7 +585,7 @@ def main():
 
         # -----------------------------------------------------------------
         # *** Evaluation ***
-        has_cuda = torch. cuda. is_available()
+        has_cuda = torch.cuda.is_available()
         logger.info(f"Validate on GPU: {has_cuda}")
         if has_cuda:
             device = "cuda"
