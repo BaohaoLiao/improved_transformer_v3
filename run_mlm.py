@@ -53,7 +53,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
-from models.bert_attention import BertSelfAttentionWithExtras
+from models.bert_attention_finetuning import BertSelfAttentionWithExtras
 
 os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
